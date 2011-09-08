@@ -24,6 +24,8 @@ int platform_cpu_kill(unsigned int cpu);
 void platform_cpu_die(unsigned int cpu);
 int platform_cpu_disable(unsigned int cpu);
 
+extern void msm_cpu_die(unsigned int cpu);
+
 extern struct smp_operations arm_smp_ops __initdata;
 extern struct smp_operations msm8960_smp_ops __initdata;
 extern struct smp_operations msm8974_smp_ops __initdata;
