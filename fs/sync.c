@@ -201,14 +201,15 @@ static int do_fsync(unsigned int fd, int datasync)
 {
 	struct file *file;
 	int ret = -EBADF;
+	int fput_needed;
 	
 	if (!fsync_enabled)
 		return 0;
 
-	file = fget(fd);
+	file = fget_light(fd, &fput_needed);
 	if (file) {
 		ret = vfs_fsync(file, datasync);
-		fput(file);
+		fput_light(file, fput_needed);
 	}
 	return ret;
 }
