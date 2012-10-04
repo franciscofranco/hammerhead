@@ -115,6 +115,7 @@ struct task_group {
 
 	atomic_t load_weight;
 	atomic64_t load_avg;
+	atomic_t runnable_avg;
 #endif
 
 #ifdef CONFIG_RT_GROUP_SCHED
@@ -236,6 +237,7 @@ struct cfs_rq {
 	atomic64_t decay_counter, removed_load;
 	u64 last_decay;
 #ifdef CONFIG_FAIR_GROUP_SCHED
+	u32 tg_runnable_contrib;
 	u64 tg_load_contrib;
 #endif
 #endif
