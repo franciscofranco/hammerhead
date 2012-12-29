@@ -71,30 +71,10 @@ void __init smp_set_ops(struct smp_operations *ops)
 		smp_ops = *ops;
 };
 
-int __cpuinit __cpu_up(unsigned int cpu)
-{
-	struct cpuinfo_arm *ci = &per_cpu(cpu_data, cpu);
-	struct task_struct *idle = ci->idle;
-	int ret;
+int __cpuinit __cpu_up(unsigned int cpu, struct task_struct *idle)
 
-	/*
-	 * Spawn a new process manually, if not already done.
-	 * Grab a pointer to its task struct so we can mess with it
-	 */
-	if (!idle) {
-		idle = fork_idle(cpu);
-		if (IS_ERR(idle)) {
-			printk(KERN_ERR "CPU%u: fork() failed\n", cpu);
-			return PTR_ERR(idle);
-		}
-		ci->idle = idle;
-	} else {
-		/*
-		 * Since this idle thread is being re-used, call
-		 * init_idle() to reinitialize the thread structure.
-		 */
-		init_idle(idle, cpu);
-	}
+{
+	int ret;
 
 	/*
 	 * We need to tell the secondary core where to find
@@ -385,9 +365,6 @@ void __init smp_cpus_done(unsigned int max_cpus)
 
 void __init smp_prepare_boot_cpu(void)
 {
-	unsigned int cpu = smp_processor_id();
-
-	per_cpu(cpu_data, cpu).idle = current;
 }
 
 void __init smp_prepare_cpus(unsigned int max_cpus)
