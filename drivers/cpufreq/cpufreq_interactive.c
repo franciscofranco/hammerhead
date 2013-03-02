@@ -375,6 +375,8 @@ static void cpufreq_interactive_timer(unsigned long data)
 
 		if (new_freq < hispeed_freq)
 			new_freq = hispeed_freq;
+	} else if (boosted) {
+		new_freq = input_boost_freq; 
 	} else {
 		new_freq = choose_freq(pcpu, loadadjfreq);
 	}
@@ -701,10 +703,12 @@ static int thread_migration_notify(struct notifier_block *nb,
 				unsigned long target_cpu, void *arg)
 {
 	unsigned long flags;
-	struct cpufreq_interactive_cpuinfo *target;
+	struct cpufreq_interactive_cpuinfo *target, *source;
 	target = &per_cpu(cpuinfo, target_cpu);
+	source = &per_cpu(cpuinfo, (int)arg);
 	
-	if (target->policy->cur < CPU_SYNC_FREQ)
+	if ((source->policy->cur > target->policy->cur) & 
+			(target->policy->cur < CPU_SYNC_FREQ))
 	{
 		target->target_freq = CPU_SYNC_FREQ;
 		target->floor_freq = CPU_SYNC_FREQ;
