@@ -570,6 +570,9 @@ config LOG_BUF_SHIFT
 		     13 =>  8 KB
 		     12 =>  4 KB
 
+config GENERIC_SCHED_CLOCK
+	bool
+
 #
 # Architectures with an unreliable sched_clock() should select this:
 #
