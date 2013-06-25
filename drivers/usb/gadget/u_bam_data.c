@@ -205,7 +205,6 @@ static void bam2bam_data_connect_work(struct work_struct *w)
 	int ret;
 
 	pr_debug("%s: Connect workqueue started", __func__);
-	usb_bam_reset_complete();
 
 	if (d->trans == USB_GADGET_XPORT_BAM2BAM_IPA) {
 		if (d->func_type == USB_FUNC_MBIM) {
