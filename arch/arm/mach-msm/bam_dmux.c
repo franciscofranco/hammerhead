@@ -227,7 +227,7 @@ static struct workqueue_struct *bam_mux_tx_workqueue;
 static struct srcu_struct bam_dmux_srcu;
 
 /* A2 power collaspe */
-#define UL_TIMEOUT_DELAY 200	/* in ms */
+#define UL_TIMEOUT_DELAY 300	/* in ms */
 #define ENABLE_DISCONNECT_ACK	0x1
 #define SHUTDOWN_TIMEOUT_MS	500
 #define UL_WAKEUP_TIMEOUT_MS	2000
