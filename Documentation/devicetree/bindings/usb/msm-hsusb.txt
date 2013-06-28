@@ -77,6 +77,15 @@ Optional properties :
 	starting controller using usbcmd run/stop bit.
 - qcom,usb2-enable-hsphy2: If present then USB2 controller is connected to 2nd
 	HSPHY.
+- qcom,hsusb-log2-itc: value of 2^(log2_itc-1) will be used as the
+	interrupt threshold (ITC), when log2_itc is between 1 to 7.
+- qcom,hsusb-l1-supported: If present, the device supports l1 (Link power
+	management).
+- qcom,no-selective-suspend: If present selective suspend is disabled on hub ports.
+- qcom,hsusb-otg-dpsehv-int: If present, indicates mpm interrupt to be configured
+	for detection of dp line transition during VDD minimization.
+- qcom,hsusb-otg-dmsehv-int: If present, indicates mpm interrupt to be configured
+	for detection of dm line transition during VDD minimization.
 
 Example HSUSB OTG controller device node :
 	usb@f9690000 {
@@ -101,6 +110,8 @@ Example HSUSB OTG controller device node :
                 HSUSB_3p3-supply = <&pm8226_l20>;
 		qcom,vdd-voltage-level = <1 5 7>;
 		qcom,dp-manual-pullup;
+		qcom,hsusb-otg-dpsehv-int = <49>;
+		qcom,hsusb-otg-dmsehv-int = <58>;
 		qcom,msm_bus,name = "usb2";
 		qcom,msm_bus,num_cases = <2>;
 		qcom,msm_bus,active_only = <0>;
