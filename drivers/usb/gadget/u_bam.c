@@ -539,7 +539,9 @@ static void gbam_start_endless_rx(struct gbam_port *port)
 	struct bam_ch_info *d = &port->data_ch;
 	int status;
 
+	spin_lock(&port->port_lock_ul);
 	if (!port->port_usb) {
+		spin_unlock(&port->port_lock_ul);
 		pr_err("%s: port->port_usb is NULL", __func__);
 		return;
 	}
@@ -548,6 +550,7 @@ static void gbam_start_endless_rx(struct gbam_port *port)
 	status = usb_ep_queue(port->port_usb->out, d->rx_req, GFP_ATOMIC);
 	if (status)
 		pr_err("%s: error enqueuing transfer, %d\n", __func__, status);
+	spin_unlock(&port->port_lock_ul);
 }
 
 static void gbam_start_endless_tx(struct gbam_port *port)
@@ -555,7 +558,9 @@ static void gbam_start_endless_tx(struct gbam_port *port)
 	struct bam_ch_info *d = &port->data_ch;
 	int status;
 
+	spin_lock(&port->port_lock_dl);
 	if (!port->port_usb) {
+		spin_unlock(&port->port_lock_dl);
 		pr_err("%s: port->port_usb is NULL", __func__);
 		return;
 	}
@@ -564,6 +569,8 @@ static void gbam_start_endless_tx(struct gbam_port *port)
 	status = usb_ep_queue(port->port_usb->in, d->tx_req, GFP_ATOMIC);
 	if (status)
 		pr_err("%s: error enqueuing transfer, %d\n", __func__, status);
+	spin_unlock(&port->port_lock_dl);
+
 }
 
 static void gbam_stop_endless_rx(struct gbam_port *port)
@@ -571,7 +578,9 @@ static void gbam_stop_endless_rx(struct gbam_port *port)
 	struct bam_ch_info *d = &port->data_ch;
 	int status;
 
+	spin_lock(&port->port_lock_ul);
 	if (!port->port_usb) {
+		spin_unlock(&port->port_lock_ul);
 		pr_err("%s: port->port_usb is NULL", __func__);
 		return;
 	}
@@ -580,14 +589,17 @@ static void gbam_stop_endless_rx(struct gbam_port *port)
 	status = usb_ep_dequeue(port->port_usb->out, d->rx_req);
 	if (status)
 		pr_err("%s: error dequeuing transfer, %d\n", __func__, status);
-
+	spin_unlock(&port->port_lock_ul);
 }
+
 static void gbam_stop_endless_tx(struct gbam_port *port)
 {
 	struct bam_ch_info *d = &port->data_ch;
 	int status;
 
+	spin_lock(&port->port_lock_dl);
 	if (!port->port_usb) {
+		spin_unlock(&port->port_lock_dl);
 		pr_err("%s: port->port_usb is NULL", __func__);
 		return;
 	}
@@ -596,6 +608,7 @@ static void gbam_stop_endless_tx(struct gbam_port *port)
 	status = usb_ep_dequeue(port->port_usb->in, d->tx_req);
 	if (status)
 		pr_err("%s: error dequeuing transfer, %d\n", __func__, status);
+	spin_unlock(&port->port_lock_dl);
 }
 
 static void gbam_start(void *param, enum usb_bam_pipe_dir dir)
