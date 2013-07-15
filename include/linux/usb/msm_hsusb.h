@@ -223,6 +223,8 @@ enum usb_vdd_value {
  * @enable_sec_phy: Use second HSPHY with USB2 core
  * @bus_scale_table: parameters for bus bandwidth requirements
  * @mhl_dev_name: MHL device name used to register with MHL driver.
+ * @dpdm_pulldown_added: Indicates whether pull down resistors are
+		connected on data lines or not.
  */
 struct msm_otg_platform_data {
 	int *phy_init_seq;
@@ -248,6 +250,7 @@ struct msm_otg_platform_data {
 	bool enable_sec_phy;
 	struct msm_bus_scale_pdata *bus_scale_table;
 	const char *mhl_dev_name;
+	bool dpdm_pulldown_added;
 };
 
 /* phy related flags */
