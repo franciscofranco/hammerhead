@@ -513,6 +513,7 @@ config ARCH_MSM8226
 	select MSM_RPM_LOG
 	select MSM_RPM_STATS_LOG
 	select ARCH_WANT_KMAP_ATOMIC_FLUSH
+	select HAS_MACH_MEMUTILS
 
 config ARCH_MSMSAMARIUM
 	bool "MSMSAMARIUM"
@@ -3062,4 +3063,9 @@ config WALL_CLK_SYSFS
 	 Support the wallclk directory in sysfs filesystem to enable the
 	 wall clock simulation and read the current SFN.
 
+config HAS_MACH_MEMUTILS
+	default n
+	bool "Motorola MSM memcpy enhancements"
+	help
+	Faster memcpy performance for Krait
 endif
