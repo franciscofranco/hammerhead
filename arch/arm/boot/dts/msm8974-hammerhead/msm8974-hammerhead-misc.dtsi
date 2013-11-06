@@ -15,7 +15,7 @@
 		compatible = "msm,pwm_vibrator";
 		haptic-pwr-gpio = <&msmgpio 60 0x00>;
 		motor-pwm-gpio = <&msmgpio 27 0x00>;
-		motor-amp = <63>;
+		motor-amp = <100>;
 		n-value = <127>;
 		vibe-warmup-delay = <20>;
 		vibe-braking-gain = <100>;
