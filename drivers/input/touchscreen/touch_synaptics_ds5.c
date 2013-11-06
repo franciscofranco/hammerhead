@@ -35,6 +35,7 @@
 #include <linux/of_gpio.h>
 #include <linux/input/touch_synaptics.h>
 #include <linux/lcd_notify.h>
+#include <linux/syscalls.h>
 
 #include "SynaImage_ds5.h"
 
@@ -239,6 +240,30 @@ static int synaptics_init_panel(struct i2c_client *client, struct synaptics_ts_f
 static int get_ic_info(struct synaptics_ts_data *ts, struct synaptics_ts_fw_info *fw_info);
 static void *get_touch_handle(struct i2c_client *client);
 
+#define BOOSTPULSE "/sys/devices/system/cpu/cpufreq/interactive/boostpulse"
+
+static struct touchboost {
+	int boostpulse_fd;
+} boost = {
+	.boostpulse_fd = -1,
+};
+
+static int boostpulse_open(void)
+{
+	if (boost.boostpulse_fd < 0)
+	{
+		boost.boostpulse_fd = sys_open(BOOSTPULSE, O_WRONLY, 0);
+		
+		if (boost.boostpulse_fd < 0)
+		{
+			pr_info("Error opening %s\n", BOOSTPULSE);
+			return -1;		
+		}
+	}
+
+	return boost.boostpulse_fd;
+}
+
 /* touch_asb_input_report
  *
  * finger status report
@@ -246,6 +271,17 @@ static void *get_touch_handle(struct i2c_client *client);
 static void touch_abs_input_report(struct synaptics_ts_data *ts, const ktime_t timestamp)
 {
 	int	id;
+	int len;
+
+	if (boostpulse_open() >= 0)
+	{
+		len = sys_write(boost.boostpulse_fd, "1", sizeof(BOOSTPULSE));
+			
+		if (len < 0)
+		{
+			pr_info("Error writing to %s\n", BOOSTPULSE);			
+		}
+	}
 
 	input_event(ts->input_dev, EV_SYN, SYN_TIME_SEC,
 				ktime_to_timespec(timestamp).tv_sec);
