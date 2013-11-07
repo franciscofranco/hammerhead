@@ -64,7 +64,7 @@ static spinlock_t speedchange_cpumask_lock;
 static struct mutex gov_lock;
 
 /* Hi speed to bump to from lo speed when load burst (default max) */
-static unsigned int hispeed_freq = 1242000;
+static unsigned int hispeed_freq = 1728000;
 
 /* Go to hi speed when CPU load at or above this value. */
 #define DEFAULT_GO_HISPEED_LOAD 95
@@ -120,7 +120,7 @@ static bool io_is_busy = true;
  * The CPU will be boosted to this frequency when the screen is
  * touched. input_boost needs to be enabled.
  */
-#define DEFAULT_INPUT_BOOST_FREQ 1134000
+#define DEFAULT_INPUT_BOOST_FREQ 1190400
 static int input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
 
 bool interactive_selected = true;
@@ -1073,9 +1073,6 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 
 	switch (event) {
 	case CPUFREQ_GOV_START:
-		if (!cpu_online(policy->cpu))
-			return -EINVAL;
-
 		mutex_lock(&gov_lock);
 
 		freq_table =
