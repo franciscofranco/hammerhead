@@ -226,7 +226,7 @@ static int synaptics_t1320_power_on(struct i2c_client *client, int on)
 /* Debug mask value
  * usage: echo [debug_mask] > /sys/module/touch_synaptics/parameters/debug_mask
  */
-static u32 touch_debug_mask = DEBUG_BASE_INFO | DEBUG_FW_UPGRADE;
+static u32 touch_debug_mask = 0;
 module_param_named(debug_mask, touch_debug_mask, int, S_IRUGO|S_IWUSR|S_IWGRP);
 
 static int touch_power_cntl(struct synaptics_ts_data *ts, int onoff);
@@ -248,7 +248,7 @@ static struct touchboost {
 	.boostpulse_fd = -1,
 };
 
-static int boostpulse_open(void)
+static inline int boostpulse_open(void)
 {
 	if (boost.boostpulse_fd < 0)
 	{
@@ -264,13 +264,8 @@ static int boostpulse_open(void)
 	return boost.boostpulse_fd;
 }
 
-/* touch_asb_input_report
- *
- * finger status report
- */
-static void touch_abs_input_report(struct synaptics_ts_data *ts, const ktime_t timestamp)
+static inline void touchboost(void)
 {
-	int	id;
 	int len;
 
 	if (boostpulse_open() >= 0)
@@ -282,6 +277,15 @@ static void touch_abs_input_report(struct synaptics_ts_data *ts, const ktime_t t
 			pr_info("Error writing to %s\n", BOOSTPULSE);			
 		}
 	}
+}
+
+/* touch_asb_input_report
+ *
+ * finger status report
+ */
+static void touch_abs_input_report(struct synaptics_ts_data *ts, const ktime_t timestamp)
+{
+	int	id;
 
 	input_event(ts->input_dev, EV_SYN, SYN_TIME_SEC,
 				ktime_to_timespec(timestamp).tv_sec);
@@ -347,6 +351,7 @@ static irqreturn_t touch_irq_handler(int irq, void *dev_id)
 
 	switch (touch_work_pre_proc(ts)) {
 	case 0:
+		touchboost();
 		touch_abs_input_report(ts, timestamp);
 		break;
 	case -EIO:
