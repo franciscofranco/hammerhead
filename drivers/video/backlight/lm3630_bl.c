@@ -586,7 +586,7 @@ static int lm3630_probe(struct i2c_client *client,
 		dev->boost_ctrl_reg = pdata->boost_ctrl_reg;
 		dev->bank_sel = pdata->bank_sel;
 		dev->linear_map = pdata->linear_map;
-		dev->max_current = pdata->max_current;
+		dev->max_current = pdata->max_current &= ~(2);
 		dev->min_brightness = pdata->min_brightness;
 		dev->default_brightness = pdata->default_brightness;
 		dev->max_brightness = pdata->max_brightness;
