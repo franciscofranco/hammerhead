@@ -60,6 +60,8 @@ static struct cpu_stats
 
 static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
+static struct work_struct suspend;
+static struct work_struct resume;
 
 static inline void calc_cpu_hotplug(unsigned int counter0,
 									unsigned int counter1)
@@ -156,7 +158,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
     queue_delayed_work(wq, &decide_hotplug, msecs_to_jiffies(TIMER));
 }
 
-void mako_hotplug_early_suspend(void)
+static void hotplug_suspend(struct work_struct *work)
 {	 
     int cpu;
 
@@ -172,25 +174,31 @@ void mako_hotplug_early_suspend(void)
 
     /* cap max frequency to 729MHz by default */
 	for_each_possible_cpu(cpu)
+	{
     	msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, 
             stats.suspend_frequency);
 
-	disable_nonboot_cpus();
+		if (cpu_online(cpu) && cpu)
+			cpu_down(cpu);
+	}
 
     pr_info("Cpulimit: Suspend - limit cpus max frequency to: %dMHz\n", 
 			stats.suspend_frequency/1000);
 }
 
-void mako_hotplug_late_resume(void)
+static void __ref hotplug_resume(struct work_struct *work)
 {  
     int cpu;
 
 	/* restore max frequency */
 	for_each_possible_cpu(cpu)
+	{
     	msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, 
 				MSM_CPUFREQ_NO_LIMIT);
 
-	enable_nonboot_cpus();
+		if (cpu_is_offline(cpu) && cpu)
+			cpu_up(cpu);
+	}
 
     pr_info("Cpulimit: Resume - restore cpus max frequency.\n");
     
@@ -198,24 +206,22 @@ void mako_hotplug_late_resume(void)
     queue_delayed_work(wq, &decide_hotplug, HZ);
 }
 
-static int lcd_notifier_callback(struct notifier_block *this,
+static int __ref lcd_notifier_callback(struct notifier_block *this,
 				unsigned long event, void *data)
 {
 
 	switch (event) {
 	case LCD_EVENT_ON_START:
 		pr_info("LCD is on.\n");
-		mako_hotplug_late_resume();
-		stats.screen_off = false;
+		schedule_work(&resume);
 		break;
 	case LCD_EVENT_ON_END:
 		break;
 	case LCD_EVENT_OFF_START:
+		pr_info("LCD is off.\n");
+		schedule_work(&suspend);
 		break;
 	case LCD_EVENT_OFF_END:
-		pr_info("LCD is off.\n");
-		mako_hotplug_early_suspend();
-		stats.screen_off = true;
 		break;
 	default:
 		break;
@@ -269,6 +275,8 @@ int __init mako_hotplug_init(void)
 	if (lcd_register_client(&stats.notif))
 		return -EINVAL;
     
+	INIT_WORK(&suspend, hotplug_suspend);
+	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
     queue_delayed_work(wq, &decide_hotplug, HZ*30);
     
