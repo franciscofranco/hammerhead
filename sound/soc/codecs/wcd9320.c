@@ -6363,6 +6363,33 @@ static struct regulator *taiko_codec_find_regulator(struct snd_soc_codec *codec,
 	return NULL;
 }
 
+struct sound_control {
+	unsigned int default_headphones_value;
+	struct snd_soc_codec *snd_control_codec;
+} soundcontrol;
+
+void update_headphones_volume_boost(int vol_boost)
+{
+	unsigned int default_val = soundcontrol.default_headphones_value;
+	unsigned int boosted_val = vol_boost != 0 ? 
+		default_val + vol_boost : default_val;
+
+	pr_info("Sound Control: Headphones default value %d\n", default_val);
+
+	taiko_write(soundcontrol.snd_control_codec,
+		TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL, boosted_val);
+	taiko_write(soundcontrol.snd_control_codec,
+		TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL, boosted_val);
+	
+	pr_info("Sound Control: Boosted Headphones RX1 value %d\n",
+		taiko_read(soundcontrol.snd_control_codec,
+		TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL));
+
+	pr_info("Sound Control: Boosted Headphones RX2 value %d\n", 
+		taiko_read(soundcontrol.snd_control_codec, 
+		TAIKO_A_CDC_RX2_VOL_CTL_B2_CTL));
+}
+
 static int taiko_codec_probe(struct snd_soc_codec *codec)
 {
 	struct wcd9xxx *control;
@@ -6374,6 +6401,8 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 	int i, rco_clk_rate;
 	void *ptr = NULL;
 	struct wcd9xxx *core = dev_get_drvdata(codec->dev->parent);
+
+	soundcontrol.snd_control_codec = codec;
 
 	codec->control_data = dev_get_drvdata(codec->dev->parent);
 	control = codec->control_data;
@@ -6535,6 +6564,13 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 	mutex_unlock(&dapm->codec->mutex);
 
 	codec->ignore_pmdown_time = 1;
+
+	/*
+	 * Get the default values during probe
+	 */
+	soundcontrol.default_headphones_value = taiko_read(codec, 
+		TAIKO_A_CDC_RX1_VOL_CTL_B2_CTL);
+
 	return ret;
 
 err_irq:
