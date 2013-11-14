@@ -242,13 +242,13 @@ static void *get_touch_handle(struct i2c_client *client);
 
 #define BOOSTPULSE "/sys/devices/system/cpu/cpufreq/interactive/boostpulse"
 
-static struct touchboost {
+struct touchboost {
 	int boostpulse_fd;
 } boost = {
 	.boostpulse_fd = -1,
 };
 
-static inline int boostpulse_open(void)
+inline int boostpulse_open(void)
 {
 	if (boost.boostpulse_fd < 0)
 	{
@@ -264,7 +264,7 @@ static inline int boostpulse_open(void)
 	return boost.boostpulse_fd;
 }
 
-static inline void touchboost(void)
+inline void touchboost(void)
 {
 	int len;
 

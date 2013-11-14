@@ -28,7 +28,7 @@
 #include <mach/cpufreq.h>
 
 #define DEFAULT_FIRST_LEVEL 60
-#define DEFAULT_SUSPEND_FREQ 729600
+#define DEFAULT_SUSPEND_FREQ 1190400
 #define DEFAULT_CORES_ON_TOUCH 2
 #define HIGH_LOAD_COUNTER 20
 #define TIMER HZ
@@ -62,6 +62,8 @@ static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 static struct work_struct suspend;
 static struct work_struct resume;
+
+extern void touchboost(void);
 
 static inline void calc_cpu_hotplug(unsigned int counter0,
 									unsigned int counter1)
@@ -172,7 +174,7 @@ static void hotplug_suspend(struct work_struct *work)
     stats.counter[0] = 0;
     stats.counter[1] = 0;
 
-    /* cap max frequency to 729MHz by default */
+    /* cap max frequency to 1190MHz by default */
 	for_each_possible_cpu(cpu)
 	{
     	msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, 
@@ -199,6 +201,8 @@ static void __ref hotplug_resume(struct work_struct *work)
 		if (cpu_is_offline(cpu) && cpu)
 			cpu_up(cpu);
 	}
+
+	touchboost();
 
     pr_info("Cpulimit: Resume - restore cpus max frequency.\n");
     
