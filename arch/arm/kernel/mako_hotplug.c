@@ -36,7 +36,7 @@
 /*
  * 1000ms = 1 second
  */
-#define MIN_TIME_CPU_ONLINE_MS 1000
+#define MIN_TIME_CPU_ONLINE_MS 2000
 
 static struct cpu_stats
 {
@@ -47,7 +47,6 @@ static struct cpu_stats
 	unsigned long timestamp[2];
 	bool ready_to_online[2];
 	struct notifier_block notif;
-	bool screen_off;
 } stats = {
 	.default_first_level = DEFAULT_FIRST_LEVEL,
     .suspend_frequency = DEFAULT_SUSPEND_FREQ,
@@ -55,12 +54,12 @@ static struct cpu_stats
     .counter = {0},
 	.timestamp = {0},
 	.ready_to_online = {false},
-	.screen_off = false,
 };
 
 static struct workqueue_struct *wq;
+static struct workqueue_struct *screen_on_off_wq;
 static struct delayed_work decide_hotplug;
-static struct delayed_work suspend;
+static struct work_struct suspend;
 static struct work_struct resume;
 
 extern void touchboost(void);
@@ -133,9 +132,6 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 		goto re_queue;
 	}*/
 
-	if (unlikely(stats.screen_off))
-		return;
-
     for_each_online_cpu(cpu) 
     {
         if (report_load_at_max_freq(cpu) >= stats.default_first_level)
@@ -192,9 +188,6 @@ static void __ref hotplug_resume(struct work_struct *work)
 {  
     int cpu;
 
-	if (delayed_work_pending(&suspend))
-		cancel_delayed_work(&suspend);
-
 	/* restore max frequency */
 	for_each_possible_cpu(cpu)
 	{
@@ -220,13 +213,13 @@ static int __ref lcd_notifier_callback(struct notifier_block *this,
 	switch (event) {
 	case LCD_EVENT_ON_START:
 		pr_info("LCD is on.\n");
-		schedule_work(&resume);
+		queue_work(screen_on_off_wq, &resume);
 		break;
 	case LCD_EVENT_ON_END:
 		break;
 	case LCD_EVENT_OFF_START:
 		pr_info("LCD is off.\n");
-		schedule_delayed_work(&suspend, HZ * 2);
+		queue_work(screen_on_off_wq, &suspend);
 		break;
 	case LCD_EVENT_OFF_END:
 		break;
@@ -278,11 +271,16 @@ int __init mako_hotplug_init(void)
     if (!wq)
         return -ENOMEM;
 
+	screen_on_off_wq = alloc_workqueue("screen_on_off_workqueue", 0, 0);
+    
+    if (!screen_on_off_wq)
+        return -ENOMEM;
+
 	stats.notif.notifier_call = lcd_notifier_callback;
 	if (lcd_register_client(&stats.notif))
 		return -EINVAL;
     
-	INIT_DELAYED_WORK(&suspend, hotplug_suspend);
+	INIT_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
     queue_delayed_work(wq, &decide_hotplug, HZ*30);
