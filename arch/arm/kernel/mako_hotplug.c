@@ -60,7 +60,7 @@ static struct cpu_stats
 
 static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
-static struct work_struct suspend;
+static struct delayed_work suspend;
 static struct work_struct resume;
 
 extern void touchboost(void);
@@ -192,6 +192,9 @@ static void __ref hotplug_resume(struct work_struct *work)
 {  
     int cpu;
 
+	if (delayed_work_pending(&suspend))
+		cancel_delayed_work(&suspend);
+
 	/* restore max frequency */
 	for_each_possible_cpu(cpu)
 	{
@@ -223,7 +226,7 @@ static int __ref lcd_notifier_callback(struct notifier_block *this,
 		break;
 	case LCD_EVENT_OFF_START:
 		pr_info("LCD is off.\n");
-		schedule_work(&suspend);
+		schedule_delayed_work(&suspend, HZ * 2);
 		break;
 	case LCD_EVENT_OFF_END:
 		break;
@@ -279,7 +282,7 @@ int __init mako_hotplug_init(void)
 	if (lcd_register_client(&stats.notif))
 		return -EINVAL;
     
-	INIT_WORK(&suspend, hotplug_suspend);
+	INIT_DELAYED_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
     queue_delayed_work(wq, &decide_hotplug, HZ*30);
