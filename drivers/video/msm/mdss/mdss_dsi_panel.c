@@ -10,6 +10,7 @@
  * GNU General Public License for more details.
  */
 
+#include <linux/sysfs.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/of.h>
@@ -272,10 +273,16 @@ static void mdss_dsi_panel_bl_ctrl(struct mdss_panel_data *pdata,
 	}
 }
 
+#define CMD_NR 6
+int gamma[23] = {0};
+//static struct dsi_cmd_desc dsi_gamma_cmd = {
+	//{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(gamma)}, gamma};
+
 static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mipi_panel_info *mipi;
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	int i;
 
 	if (pdata == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
@@ -288,12 +295,64 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
+	for (i = 10; i < 36; i++)
+		ctrl->on_cmds.cmds[CMD_NR].payload[i] = gamma[i];
+
 	if (ctrl->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
 
 	pr_info("%s\n", __func__);
 	return 0;
 }
+
+static ssize_t gamma_show(struct kobject * kobj, struct kobj_attribute * attr, char * buf)
+{
+	int i, len = 0;
+
+	if (buf)
+	{
+		for (i = 10; i < 36; i++)
+			len += sprintf(buf + len, "%d ", gamma[i]);	
+	}
+
+ 	return len;
+}
+ 
+static ssize_t gamma_store(struct kobject * kobj, struct kobj_attribute * attr, const char * buf, size_t count)
+{
+	int i, ret = 0;
+	int gamma_index;
+	char buffer[20];
+	
+	for (i = 0; i < 18; i++)
+	{
+		ret = sscanf(buf, "%d", &gamma_index);
+
+		if (ret != 1)
+			return -EINVAL;
+
+		gamma[i] = gamma_index;
+
+		sscanf(buf, "%s", buffer);
+		buf += (strlen(buffer) + 1);	 
+	}
+
+ 	return count;
+}
+ 
+static struct kobj_attribute gamma_attribute = __ATTR(gamma, 0666, gamma_show, gamma_store);
+ 
+static struct attribute * attrs [] =
+{
+ 	&gamma_attribute.attr,
+ 	NULL,
+};
+ 
+static struct attribute_group attr_group = {
+ 	.attrs = attrs,
+};
+ 
+static struct kobject *ex_kobj;
 
 static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 {
@@ -882,7 +941,9 @@ static int parse_on_cmds(char **on_cmds, const char *buf, size_t count)
 	for (j = i; j < count; ++j) {
 		if (isxdigit(buf[j]) && isxdigit(buf[j + 1])) {
 			++on_cmds_len;
+			pr_info("VALUE: %d", buf[j]);
 			++j;
+			pr_info("%d\n", buf[j]);
 		} else if (buf[j] == ']')
 			break;
 	}
@@ -1063,9 +1124,19 @@ static int debug_fs_init(struct mdss_panel_common_pdata *panel_data)
 
 static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 {
+	int i;
+	int retval;
 	int rc = 0;
 	static struct mdss_panel_common_pdata vendor_pdata;
 	static const char *panel_name;
+
+	ex_kobj = kobject_create_and_add("gamma", kernel_kobj);
+	if (!ex_kobj)
+		return -EINVAL;
+
+	retval = sysfs_create_group(ex_kobj, &attr_group);
+	if (retval)
+		kobject_put(ex_kobj);
 
 	pr_debug("%s:%d, debug info id=%d", __func__, __LINE__, pdev->id);
 	if (!pdev->dev.of_node)
@@ -1089,6 +1160,11 @@ static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 	rc = dsi_panel_device_register(pdev, &vendor_pdata);
 	if (rc)
 		return rc;
+
+	for (i = 10; i < 36; i++)
+	{
+		gamma[i] = vendor_pdata.on_cmds.cmds[CMD_NR].payload[i];
+	}
 
 #ifdef CONFIG_DEBUG_FS
 	debug_fs_init(&vendor_pdata);
