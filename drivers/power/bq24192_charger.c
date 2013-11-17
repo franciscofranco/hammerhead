@@ -337,7 +337,7 @@ static int bq24192_set_input_i_limit(struct bq24192_chip *chip, int ma)
 
 	if (ma > chip->max_input_i_ma) {
 		chip->saved_input_i_ma = ma;
-		pr_info("reject %d mA due to therm mitigation\n", ma);
+		pr_debug("reject %d mA due to therm mitigation\n", ma);
 		return 0;
 	}
 
@@ -345,7 +345,7 @@ static int bq24192_set_input_i_limit(struct bq24192_chip *chip, int ma)
 		chip->saved_input_i_ma = ma;
 
 	chip->therm_mitigation = false;
-	pr_info("input current limit = %d setting 0x%02x\n", ma, temp);
+	pr_debug("input current limit = %d setting 0x%02x\n", ma, temp);
 	return bq24192_masked_write(chip->client, INPUT_SRC_CONT_REG,
 			INPUT_CURRENT_LIMIT_MASK, temp);
 }
@@ -422,7 +422,7 @@ static int bq24192_set_ibat_max(struct bq24192_chip *chip, int ma)
 	if ((chip->batt_health == POWER_SUPPLY_HEALTH_OVERHEAT)
 			&& (ma > chip->set_chg_current_ma)) {
 		chip->saved_ibat_ma = ma;
-		pr_info("reject %d mA setting due to overheat\n", ma);
+		pr_debug("reject %d mA setting due to overheat\n", ma);
 		return 0;
 	}
 
@@ -430,7 +430,7 @@ static int bq24192_set_ibat_max(struct bq24192_chip *chip, int ma)
 	set_ibat = reg_val * IBAT_STEP_MA + IBAT_MIN_MA;
 	reg_val = reg_val << 2;
 	chip->set_chg_current_ma = set_ibat;
-	pr_info("req_ibat = %d set_ibat = %d reg_val = 0x%02x\n",
+	pr_debug("req_ibat = %d set_ibat = %d reg_val = 0x%02x\n",
 				ma, set_ibat, reg_val);
 
 	return bq24192_masked_write(chip->client, CHARGE_CUR_CONT_REG,
@@ -452,7 +452,7 @@ static int bq24192_check_restore_ibatt(struct bq24192_chip *chip,
 		if (chip->saved_ibat_ma) {
 			bq24192_set_ibat_max(chip,
 					chip->saved_ibat_ma);
-			pr_info("restore ibat max = %d by decreasing temp",
+			pr_debug("restore ibat max = %d by decreasing temp",
 						chip->saved_ibat_ma);
 		}
 		chip->saved_ibat_ma = 0;
@@ -705,7 +705,7 @@ static void bq24192_irq_worker(struct work_struct *work)
 			if (chip->batt_health != POWER_SUPPLY_HEALTH_OVERHEAT)
 				bq24192_set_rechg_voltage(chip, VRECHG_300MV);
 			power_supply_changed(&chip->ac_psy);
-			pr_info("charge done!!\n");
+			pr_debug("charge done!!\n");
 		}
 	}
 
@@ -716,7 +716,7 @@ static void bq24192_irq_worker(struct work_struct *work)
 	}
 
 	if ((chip->ext_pwr ^ ext_pwr) || (chip->wlc_pwr ^ wlc_pwr)) {
-		pr_info("power source changed! ext_pwr = %d wlc_pwr = %d\n",
+		pr_debug("power source changed! ext_pwr = %d wlc_pwr = %d\n",
 				ext_pwr, wlc_pwr);
 		if (wake_lock_active(&chip->icl_wake_lock))
 			wake_unlock(&chip->icl_wake_lock);
@@ -742,7 +742,7 @@ static void bq24192_irq_worker(struct work_struct *work)
 		}
 
 		if (!wlc_pwr) {
-			pr_info("notify vbus to usb otg ext_pwr = %d\n", ext_pwr);
+			pr_debug("notify vbus to usb otg ext_pwr = %d\n", ext_pwr);
 			power_supply_set_present(chip->usb_psy, ext_pwr);
 		}
 
@@ -787,7 +787,7 @@ static void bq24192_vbat_work(struct work_struct *work)
 	}
 
 	if (bq24192_is_charger_present(chip)) {
-		pr_info("change to chg current = %d, input_limit = %d\n",
+		pr_debug("change to chg current = %d, input_limit = %d\n",
 				step_current_ma, step_input_i_ma);
 		bq24192_set_input_i_limit(chip, step_input_i_ma);
 		bq24192_set_ibat_max(chip, step_current_ma);
@@ -923,7 +923,7 @@ static int bq24192_enable_otg(struct bq24192_chip *chip, bool enable)
 	int ret;
 	u8 val = (u8)(!!enable << OTG_ENABLE_SHIFT);
 
-	pr_info("otg enable = %d\n", enable);
+	pr_debug("otg enable = %d\n", enable);
 
 	ret = bq24192_masked_write(chip->client, PWR_ON_CONF_REG,
 					OTG_EN_MASK, val);
@@ -1001,7 +1001,7 @@ static bool bq24192_is_wlc_bounced(struct bq24192_chip *chip)
 
 	prev_time = now_time;
 	if (bounced_cnt >= WLC_BOUNCE_COUNT) {
-		pr_info("detect wlc bouncing!\n");
+		pr_debug("detect wlc bouncing!\n");
 		bounced_cnt = 0;
 		return true;
 	}
@@ -1040,7 +1040,7 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 		bq24192_set_input_vin_limit(chip, chip->vin_limit_mv);
 		bq24192_set_input_i_limit(chip, ret.intval / 1000);
 		bq24192_set_ibat_max(chip, USB_MAX_IBAT_MA);
-		pr_info("usb is online! i_limit = %d v_limit = %d\n",
+		pr_debug("usb is online! i_limit = %d v_limit = %d\n",
 				ret.intval / 1000, chip->vin_limit_mv);
 	} else if (chip->ac_online &&
 			bq24192_is_charger_present(chip)) {
@@ -1052,7 +1052,7 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 		wake_lock(&chip->icl_wake_lock);
 		schedule_delayed_work(&chip->input_limit_work,
 					msecs_to_jiffies(200));
-		pr_info("ac is online! i_limit = %d v_limit = %d\n",
+		pr_debug("ac is online! i_limit = %d v_limit = %d\n",
 				adap_tbl[0].chg_limit, chip->vin_limit_mv);
 	} else if (wlc_online) {
 		chip->dwn_chg_i_ma = chip->wlc_dwn_i_ma;
@@ -1066,7 +1066,7 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 		bq24192_set_input_i_limit(chip, chip->up_input_i_ma);
 		bq24192_set_ibat_max(chip, wlc_chg_current_ma);
 		bq24192_step_down_detect_init(chip);
-		pr_info("wlc is online! i_limit = %d v_limit = %d\n",
+		pr_debug("wlc is online! i_limit = %d v_limit = %d\n",
 				wlc_chg_current_ma, chip->wlc_vin_limit_mv);
 	}
 
@@ -1078,7 +1078,7 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 			  POWER_SUPPLY_PROP_SCOPE, &ret);
 
 	if (ret.intval) {
-		pr_info("usb host mode = %d\n", ret.intval);
+		pr_debug("usb host mode = %d\n", ret.intval);
 		if ((ret.intval == POWER_SUPPLY_SCOPE_SYSTEM)
 					&& !bq24192_is_otg_mode(chip))
 			bq24192_enable_otg(chip, true);
@@ -1191,7 +1191,7 @@ static void bq24192_input_limit_worker(struct work_struct *work)
 	vbus_mv = bq24192_get_prop_input_voltage(chip);
 	vbus_mv = vbus_mv/1000;
 
-	pr_info("vbus_mv = %d\n", vbus_mv);
+	pr_debug("vbus_mv = %d\n", vbus_mv);
 
 	if (chip->icl_first && chip->icl_idx > 0) {
 		chip->icl_fail_cnt++;
@@ -1230,7 +1230,7 @@ static void bq24192_input_limit_worker(struct work_struct *work)
 			bq24192_step_down_detect_init(chip);
 		}
 
-		pr_info("optimal input i limit = %d chg limit = %d\n",
+		pr_debug("optimal input i limit = %d chg limit = %d\n",
 					adap_tbl[chip->icl_idx].input_limit,
 					adap_tbl[chip->icl_idx].chg_limit);
 		chip->icl_idx = 0;
@@ -1732,7 +1732,7 @@ static int bq24192_probe(struct i2c_client *client,
 	}
 	spin_unlock_irqrestore(&chip->irq_work_lock, flags);
 
-	pr_info("probe success\n");
+	pr_debug("probe success\n");
 
 	return 0;
 
@@ -1753,7 +1753,7 @@ err_otg_en_gpio:
 		gpio_free(chip->int_gpio);
 error:
 	kfree(chip);
-	pr_info("fail to probe\n");
+	pr_debug("fail to probe\n");
 	return ret;
 
 }
