@@ -95,7 +95,7 @@ static inline cputime64_t get_cpu_iowait_time(unsigned int cpu,
 	return iowait_time;
 }
 
-static int update_average_load(unsigned int cpu)
+static inline int update_average_load(unsigned int cpu)
 {
 	struct cpufreq_policy cpu_policy;
 	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
@@ -128,21 +128,18 @@ static int update_average_load(unsigned int cpu)
 	/* Calculate the scaled load across CPU */
 	load_at_max_freq = (cur_load * cpu_policy.cur) / pcpu->policy_max;
 
-	/* This is the first sample in this window*/
-	pcpu->avg_load_maxfreq = pcpu->prev_avg_load_maxfreq + load_at_max_freq;
-	pcpu->avg_load_maxfreq /= 2;
 	pcpu->window_size = wall_time;
-
-	return 0;
+	pcpu->avg_load_maxfreq = (pcpu->prev_avg_load_maxfreq + load_at_max_freq) / 2;
+	
+	return pcpu->avg_load_maxfreq;
 }
 
-unsigned int report_load_at_max_freq(int cpu)
+unsigned inline int report_load_at_max_freq(int cpu)
 {
 	struct cpu_load_data *pcpu;
 	unsigned int total_load = 0;
 	pcpu = &per_cpu(cpuload, cpu);
-	update_average_load(cpu);
-	total_load = pcpu->avg_load_maxfreq;
+	total_load = update_average_load(cpu);
 	pcpu->prev_avg_load_maxfreq = pcpu->avg_load_maxfreq;
 	pcpu->avg_load_maxfreq = 0;
 
@@ -156,7 +153,6 @@ static int __init msm_rq_stats_init(void)
 
 	for_each_possible_cpu(i) {
 		struct cpu_load_data *pcpu = &per_cpu(cpuload, i);
-		mutex_init(&pcpu->cpu_load_mutex);
 		cpufreq_get_policy(&cpu_policy, i);
 		pcpu->policy_max = cpu_policy.max;
 		if (cpu_online(i))
