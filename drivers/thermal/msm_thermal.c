@@ -29,18 +29,14 @@
 #define PANIC_THROTTLE_FREQUENCY 729600
 
 static struct cpus {
-    bool throttling;
+	bool throttling;
+	int thermal_steps[5];
 } cpu_stats = {
 	.throttling = false,
+	.thermal_steps = {729600, 1190400, 1497600, 1728000, 1958400},
 };
 
-/*
- * Poll for temperature changes every 2 seconds.
- * It will scale based on the device temperature.
- */
-unsigned int polling = HZ*2;
-
-unsigned int temp_threshold = 75;
+unsigned int temp_threshold = 70;
 module_param(temp_threshold, int, 0755);
 
 static struct msm_thermal_data msm_thermal_info;
@@ -61,29 +57,22 @@ static int update_cpu_max_freq(int cpu, uint32_t max_freq)
 	if (ret)
 		return ret;
 
-	if (max_freq != MSM_CPUFREQ_NO_LIMIT)
-	{
-		cpu_stats.throttling = true;
-		pr_info("%s: Limiting cpu%d max frequency to %d\n",
-				KBUILD_MODNAME, cpu, max_freq);
-	} else {
-		cpu_stats.throttling = false; 
-		pr_info("%s: Max frequency reset for cpu%d\n",
-				KBUILD_MODNAME, cpu);
-	}
-
-	get_online_cpus();
 	if (cpu_online(cpu)) {
 		struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
+
 		if (!policy)
 			return ret;
+
 		if (max_freq == MSM_CPUFREQ_NO_LIMIT)
 			max_freq = policy->cpuinfo.max_freq;
+
 		ret = cpufreq_driver_target(policy, max_freq,
-				CPUFREQ_RELATION_H);
+			CPUFREQ_RELATION_H);
 		cpufreq_cpu_put(policy);
 	}
-	put_online_cpus();
+
+	pr_info("%s: Setting cpu%d max frequency to %d\n",
+				KBUILD_MODNAME, cpu, max_freq);
 
 	return ret;
 }
@@ -110,40 +99,47 @@ static void check_temp(struct work_struct *work)
     
 	tsens_dev.sensor_num = msm_thermal_info.sensor_id;
 	tsens_get_temp(&tsens_dev, &temp);
-    
-	/* temperature is high, lets throttle even more and
-     poll way faster*/
-	if (temp >= (temp_threshold + 10))
+
+	if (temp >= temp_threshold)
 	{
-        if (!cpu_stats.throttling)
-        {
-            limit_cpu_freqs(PANIC_THROTTLE_FREQUENCY);
-            polling = HZ/8;
-        }
+		cpu_stats.throttling = true;
+		limit_cpu_freqs(cpu_stats.thermal_steps[0]);
 	}
 
-	/* temperature is high, lets throttle even more and
-     poll faster (every .25s) */
-	else if (temp >= temp_threshold)
+	else if (temp >= (temp_threshold + 20))
 	{
-        if (!cpu_stats.throttling)
-        {
-            limit_cpu_freqs(THROTTLE_FREQUENCY);
-            polling = HZ/4;
-        }
+		cpu_stats.throttling = true;
+		limit_cpu_freqs(cpu_stats.thermal_steps[1]);
 	}
     
-	/* the device is in safe temperature, polling is normal (every second) */
-	else if (temp < (temp_threshold - 5))
+	else if (temp >= (temp_threshold + 15))
 	{
-        if (cpu_stats.throttling)
-        {
-            limit_cpu_freqs(MSM_CPUFREQ_NO_LIMIT);
-            polling = HZ*2;
-        }
+		cpu_stats.throttling = true;
+		limit_cpu_freqs(cpu_stats.thermal_steps[2]);
 	}
-    
-	queue_delayed_work(wq, &check_temp_work, polling);
+
+	else if (temp >= (temp_threshold + 10))
+	{
+		cpu_stats.throttling = true;
+		limit_cpu_freqs(cpu_stats.thermal_steps[3]);
+	}
+
+	else if (temp >= (temp_threshold + 5))
+	{
+		cpu_stats.throttling = true;
+		limit_cpu_freqs(cpu_stats.thermal_steps[4]);
+	}
+
+	else if (temp <= temp_threshold)
+	{
+		if (cpu_stats.throttling)
+		{
+			limit_cpu_freqs(MSM_CPUFREQ_NO_LIMIT);
+			cpu_stats.throttling = false;
+		}
+	}
+
+	queue_delayed_work(wq, &check_temp_work, HZ);
 }
 
 int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
@@ -154,7 +150,7 @@ int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
 	BUG_ON(pdata->sensor_id >= TSENS_MAX_SENSORS);
 	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
     
-	wq = alloc_workqueue("msm_thermal_workqueue", WQ_UNBOUND, 0);
+	wq = alloc_workqueue("msm_thermal_workqueue", WQ_FREEZABLE | WQ_UNBOUND, 0);
     
     if (!wq)
         return -ENOMEM;
