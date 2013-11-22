@@ -73,11 +73,10 @@ enum {
 	WORKER_DIE		= 1 << 1,	/* die die die */
 	WORKER_IDLE		= 1 << 2,	/* is idle */
 	WORKER_PREP		= 1 << 3,	/* preparing to run works */
-	WORKER_REBIND		= 1 << 5,	/* mom is home, come back */
 	WORKER_CPU_INTENSIVE	= 1 << 6,	/* cpu intensive */
 	WORKER_UNBOUND		= 1 << 7,	/* worker is unbound */
 
-	WORKER_NOT_RUNNING	= WORKER_PREP | WORKER_REBIND | WORKER_UNBOUND |
+	WORKER_NOT_RUNNING	= WORKER_PREP | WORKER_UNBOUND |
 				  WORKER_CPU_INTENSIVE,
 
 	NR_WORKER_POOLS		= 2,		/* # worker pools per gcwq */
@@ -126,7 +125,6 @@ enum {
 
 struct global_cwq;
 struct worker_pool;
-struct idle_rebind;
 
 /*
  * The poor guys doing the actual heavy lifting.  All on-duty workers
@@ -150,7 +148,6 @@ struct worker {
 	int			id;		/* I: worker id */
 
 	/* for rebinding worker to CPU */
-	struct idle_rebind	*idle_rebind;	/* L: for idle worker */
 	struct work_struct	rebind_work;	/* L: for busy worker */
 };
 
@@ -160,6 +157,8 @@ struct worker_pool {
 
 	struct list_head	worklist;	/* L: list of pending works */
 	int			nr_workers;	/* L: total number of workers */
+
+	/* nr_idle includes the ones off idle_list for rebinding */
 	int			nr_idle;	/* L: currently idle ones */
 
 	struct list_head	idle_list;	/* X: list of idle workers */
@@ -184,9 +183,8 @@ struct global_cwq {
 	struct hlist_head	busy_hash[BUSY_WORKER_HASH_SIZE];
 						/* L: hash of busy workers */
 
-	struct worker_pool	pools[2];	/* normal and highpri pools */
-
-	wait_queue_head_t	rebind_hold;	/* rebind hold wait */
+	struct worker_pool	pools[NR_WORKER_POOLS];
+						/* normal and highpri pools */
 } ____cacheline_aligned_in_smp;
 
 /*
@@ -656,6 +654,13 @@ static bool too_many_workers(struct worker_pool *pool)
 	bool managing = pool->flags & POOL_MANAGING_WORKERS;
 	int nr_idle = pool->nr_idle + managing; /* manager is considered idle */
 	int nr_busy = pool->nr_workers - nr_idle;
+
+	/*
+	 * nr_idle and idle_list may disagree if idle rebinding is in
+	 * progress.  Never return %true if idle_list is empty.
+	 */
+	if (list_empty(&pool->idle_list))
+		return false;
 
 	return nr_idle > 2 && (nr_idle - 2) * MAX_IDLE_WORKERS_RATIO >= nr_busy;
 }
@@ -1305,37 +1310,21 @@ __acquires(&gcwq->lock)
 	}
 }
 
-struct idle_rebind {
-	int			cnt;		/* # workers to be rebound */
-	struct completion	done;		/* all workers rebound */
-};
-
 /*
- * Rebind an idle @worker to its CPU.  During CPU onlining, this has to
- * happen synchronously for idle workers.  worker_thread() will test
- * %WORKER_REBIND before leaving idle and call this function.
+ * Rebind an idle @worker to its CPU.  worker_thread() will test
+ * list_empty(@worker->entry) before leaving idle and call this function.
  */
 static void idle_worker_rebind(struct worker *worker)
 {
 	struct global_cwq *gcwq = worker->pool->gcwq;
 
-	/* CPU must be online at this point */
-	WARN_ON(!worker_maybe_bind_and_lock(worker));
-	if (!--worker->idle_rebind->cnt)
-		complete(&worker->idle_rebind->done);
-	spin_unlock_irq(&worker->pool->gcwq->lock);
+	/* CPU may go down again inbetween, clear UNBOUND only on success */
+	if (worker_maybe_bind_and_lock(worker))
+		worker_clr_flags(worker, WORKER_UNBOUND);
 
-	/* we did our part, wait for rebind_workers() to finish up */
-	wait_event(gcwq->rebind_hold, !(worker->flags & WORKER_REBIND));
-
-	/*
-	 * rebind_workers() shouldn't finish until all workers passed the
-	 * above WORKER_REBIND wait.  Tell it when done.
-	 */
-	spin_lock_irq(&worker->pool->gcwq->lock);
-	if (!--worker->idle_rebind->cnt)
-		complete(&worker->idle_rebind->done);
-	spin_unlock_irq(&worker->pool->gcwq->lock);
+	/* rebind complete, become available again */
+	list_add(&worker->entry, &worker->pool->idle_list);
+	spin_unlock_irq(&gcwq->lock);
 }
 
 /*
@@ -1349,16 +1338,8 @@ static void busy_worker_rebind_fn(struct work_struct *work)
 	struct worker *worker = container_of(work, struct worker, rebind_work);
 	struct global_cwq *gcwq = worker->pool->gcwq;
 
-	worker_maybe_bind_and_lock(worker);
-
-	/*
-	 * %WORKER_REBIND must be cleared even if the above binding failed;
-	 * otherwise, we may confuse the next CPU_UP cycle or oops / get
-	 * stuck by calling idle_worker_rebind() prematurely.  If CPU went
-	 * down again inbetween, %WORKER_UNBOUND would be set, so clearing
-	 * %WORKER_REBIND is always safe.
-	 */
-	worker_clr_flags(worker, WORKER_REBIND);
+	if (worker_maybe_bind_and_lock(worker))
+		worker_clr_flags(worker, WORKER_UNBOUND);
 
 	spin_unlock_irq(&gcwq->lock);
 }
@@ -1370,29 +1351,25 @@ static void busy_worker_rebind_fn(struct work_struct *work)
  * @gcwq->cpu is coming online.  Rebind all workers to the CPU.  Rebinding
  * is different for idle and busy ones.
  *
- * The idle ones should be rebound synchronously and idle rebinding should
- * be complete before any worker starts executing work items with
- * concurrency management enabled; otherwise, scheduler may oops trying to
- * wake up non-local idle worker from wq_worker_sleeping().
+ * Idle ones will be removed from the idle_list and woken up.  They will
+ * add themselves back after completing rebind.  This ensures that the
+ * idle_list doesn't contain any unbound workers when re-bound busy workers
+ * try to perform local wake-ups for concurrency management.
  *
- * This is achieved by repeatedly requesting rebinding until all idle
- * workers are known to have been rebound under @gcwq->lock and holding all
- * idle workers from becoming busy until idle rebinding is complete.
+ * Busy workers can rebind after they finish their current work items.
+ * Queueing the rebind work item at the head of the scheduled list is
+ * enough.  Note that nr_running will be properly bumped as busy workers
+ * rebind.
  *
- * Once idle workers are rebound, busy workers can be rebound as they
- * finish executing their current work items.  Queueing the rebind work at
- * the head of their scheduled lists is enough.  Note that nr_running will
- * be properbly bumped as busy workers rebind.
- *
- * On return, all workers are guaranteed to either be bound or have rebind
- * work item scheduled.
+ * On return, all non-manager workers are scheduled for rebind - see
+ * manage_workers() for the manager special case.  Any idle worker
+ * including the manager will not appear on @idle_list until rebind is
+ * complete, making local wake-ups safe.
  */
 static void rebind_workers(struct global_cwq *gcwq)
-	__releases(&gcwq->lock) __acquires(&gcwq->lock)
 {
-	struct idle_rebind idle_rebind;
 	struct worker_pool *pool;
-	struct worker *worker;
+	struct worker *worker, *n;
 	struct hlist_node *pos;
 	int i;
 
@@ -1401,54 +1378,27 @@ static void rebind_workers(struct global_cwq *gcwq)
 	for_each_worker_pool(pool, gcwq)
 		lockdep_assert_held(&pool->manager_mutex);
 
-	/*
-	 * Rebind idle workers.  Interlocked both ways.  We wait for
-	 * workers to rebind via @idle_rebind.done.  Workers will wait for
-	 * us to finish up by watching %WORKER_REBIND.
-	 */
-	init_completion(&idle_rebind.done);
-retry:
-	idle_rebind.cnt = 1;
-	INIT_COMPLETION(idle_rebind.done);
-
-	/* set REBIND and kick idle ones, we'll wait for these later */
+	/* dequeue and kick idle ones */
 	for_each_worker_pool(pool, gcwq) {
-		list_for_each_entry(worker, &pool->idle_list, entry) {
-			unsigned long worker_flags = worker->flags;
+		list_for_each_entry_safe(worker, n, &pool->idle_list, entry) {
+			/*
+			 * idle workers should be off @pool->idle_list
+			 * until rebind is complete to avoid receiving
+			 * premature local wake-ups.
+			 */
+			list_del_init(&worker->entry);
 
-			if (worker->flags & WORKER_REBIND)
-				continue;
-
-			/* morph UNBOUND to REBIND atomically */
-			worker_flags &= ~WORKER_UNBOUND;
-			worker_flags |= WORKER_REBIND;
-			ACCESS_ONCE(worker->flags) = worker_flags;
-
-			idle_rebind.cnt++;
-			worker->idle_rebind = &idle_rebind;
-
-			/* worker_thread() will call idle_worker_rebind() */
+			/*
+			 * worker_thread() will see the above dequeuing
+			 * and call idle_worker_rebind().
+			 */
 			wake_up_process(worker->task);
 		}
 	}
 
-	if (--idle_rebind.cnt) {
-		spin_unlock_irq(&gcwq->lock);
-		wait_for_completion(&idle_rebind.done);
-		spin_lock_irq(&gcwq->lock);
-		/* busy ones might have become idle while waiting, retry */
-		goto retry;
-	}
-
-	/* all idle workers are rebound, rebind busy workers */
+	/* rebind busy workers */
 	for_each_busy_worker(worker, i, pos, gcwq) {
 		struct work_struct *rebind_work = &worker->rebind_work;
-		unsigned long worker_flags = worker->flags;
-
-		/* morph UNBOUND to REBIND atomically */
-		worker_flags &= ~WORKER_UNBOUND;
-		worker_flags |= WORKER_REBIND;
-		ACCESS_ONCE(worker->flags) = worker_flags;
 
 		if (test_and_set_bit(WORK_STRUCT_PENDING_BIT,
 				     work_data_bits(rebind_work)))
@@ -1459,34 +1409,6 @@ retry:
 		insert_work(get_cwq(gcwq->cpu, system_wq), rebind_work,
 			    worker->scheduled.next,
 			    work_color_to_flags(WORK_NO_COLOR));
-	}
-
-	/*
-	 * All idle workers are rebound and waiting for %WORKER_REBIND to
-	 * be cleared inside idle_worker_rebind().  Clear and release.
-	 * Clearing %WORKER_REBIND from this foreign context is safe
-	 * because these workers are still guaranteed to be idle.
-	 *
-	 * We need to make sure all idle workers passed WORKER_REBIND wait
-	 * in idle_worker_rebind() before returning; otherwise, workers can
-	 * get stuck at the wait if hotplug cycle repeats.
-	 */
-	idle_rebind.cnt = 1;
-	INIT_COMPLETION(idle_rebind.done);
-
-	for_each_worker_pool(pool, gcwq) {
-		list_for_each_entry(worker, &pool->idle_list, entry) {
-			worker->flags &= ~WORKER_REBIND;
-			idle_rebind.cnt++;
-		}
-	}
-
-	wake_up_all(&gcwq->rebind_hold);
-
-	if (--idle_rebind.cnt) {
-		spin_unlock_irq(&gcwq->lock);
-		wait_for_completion(&idle_rebind.done);
-		spin_lock_irq(&gcwq->lock);
 	}
 }
 
@@ -2037,7 +1959,7 @@ __acquires(&gcwq->lock)
 	 * necessary to avoid spurious warnings from rescuers servicing the
 	 * unbound or a disassociated gcwq.
 	 */
-	WARN_ON_ONCE(!(worker->flags & (WORKER_UNBOUND | WORKER_REBIND)) &&
+	WARN_ON_ONCE(!(worker->flags & WORKER_UNBOUND) &&
 		     !(gcwq->flags & GCWQ_DISASSOCIATED) &&
 		     raw_smp_processor_id() != gcwq->cpu);
 
@@ -2169,18 +2091,17 @@ static int worker_thread(void *__worker)
 woke_up:
 	spin_lock_irq(&gcwq->lock);
 
-	/*
-	 * DIE can be set only while idle and REBIND set while busy has
-	 * @worker->rebind_work scheduled.  Checking here is enough.
-	 */
-	if (unlikely(worker->flags & (WORKER_REBIND | WORKER_DIE))) {
+	/* we are off idle list if destruction or rebind is requested */
+	if (unlikely(list_empty(&worker->entry))) {
 		spin_unlock_irq(&gcwq->lock);
 
+		/* if DIE is set, destruction is requested */
 		if (worker->flags & WORKER_DIE) {
 			worker->task->flags &= ~PF_WQ_WORKER;
 			return 0;
 		}
 
+		/* otherwise, rebind */
 		idle_worker_rebind(worker);
 		goto woke_up;
 	}
@@ -3546,7 +3467,7 @@ static void gcwq_unbind_fn(struct work_struct *work)
  * Workqueues should be brought up before normal priority CPU notifiers.
  * This will be registered high priority CPU notifier.
  */
-static int __devinit workqueue_cpu_up_callback(struct notifier_block *nfb,
+static int __cpuinit workqueue_cpu_up_callback(struct notifier_block *nfb,
 					       unsigned long action,
 					       void *hcpu)
 {
@@ -3587,7 +3508,7 @@ static int __devinit workqueue_cpu_up_callback(struct notifier_block *nfb,
  * Workqueues should be brought down after normal priority CPU notifiers.
  * This will be registered as low priority CPU notifier.
  */
-static int __devinit workqueue_cpu_down_callback(struct notifier_block *nfb,
+static int __cpuinit workqueue_cpu_down_callback(struct notifier_block *nfb,
 						 unsigned long action,
 						 void *hcpu)
 {
@@ -3792,7 +3713,7 @@ static int __init init_workqueues(void)
 	int i;
 
 	cpu_notifier(workqueue_cpu_up_callback, CPU_PRI_WORKQUEUE_UP);
-	cpu_notifier(workqueue_cpu_down_callback, CPU_PRI_WORKQUEUE_DOWN);
+	hotcpu_notifier(workqueue_cpu_down_callback, CPU_PRI_WORKQUEUE_DOWN);
 
 	/* initialize gcwqs */
 	for_each_gcwq_cpu(cpu) {
@@ -3821,8 +3742,6 @@ static int __init init_workqueues(void)
 			mutex_init(&pool->manager_mutex);
 			ida_init(&pool->worker_ida);
 		}
-
-		init_waitqueue_head(&gcwq->rebind_hold);
 	}
 
 	/* create the initial worker */
