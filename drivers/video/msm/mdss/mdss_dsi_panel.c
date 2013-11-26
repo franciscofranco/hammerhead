@@ -1226,6 +1226,8 @@ static struct attribute_group dsi_panel_attribute_group = {
 
 /**************************** sysfs end **************************/
 
+static struct kobject *ex_kobj;
+
 static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 {
 	int rc = 0;
@@ -1263,9 +1265,13 @@ static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 	debug_fs_init(&vendor_pdata);
 #endif
 
-	rc = sysfs_create_group(&pdev->dev.kobj, &dsi_panel_attribute_group);
+	ex_kobj = kobject_create_and_add("gamma", kernel_kobj);
+	if (!ex_kobj)
+		return -EINVAL;
+
+	rc = sysfs_create_group(ex_kobj, &dsi_panel_attribute_group);
 	if (rc)
-		pr_err("%s: sysfs create failed: %d\n", panel_name, rc);
+		kobject_put(ex_kobj);
 
 	return rc;
 }
