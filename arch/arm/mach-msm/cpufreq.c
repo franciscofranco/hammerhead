@@ -135,13 +135,6 @@ static int msm_cpufreq_target(struct cpufreq_policy *policy,
 
 	mutex_lock(&per_cpu(cpufreq_suspend, policy->cpu).suspend_mutex);
 
-	if (per_cpu(cpufreq_suspend, policy->cpu).device_suspended) {
-		pr_debug("cpufreq: cpu%d scheduling frequency change "
-				"in suspend.\n", policy->cpu);
-		ret = -EFAULT;
-		goto done;
-	}
-
 	table = cpufreq_frequency_get_table(policy->cpu);
 	if (cpufreq_frequency_table_target(policy, table, target_freq, relation,
 			&index)) {
@@ -220,7 +213,7 @@ int msm_cpufreq_set_freq_limits(uint32_t cpu, uint32_t min, uint32_t max)
 {
 	struct cpu_freq *limit = &per_cpu(cpu_freq_info, cpu);
 
-	if (!limit->limits_init)
+	if (unlikely(!limit->limits_init))
 		msm_cpufreq_limits_init();
 
 	if ((min != MSM_CPUFREQ_NO_LIMIT) &&
@@ -243,6 +236,21 @@ int msm_cpufreq_set_freq_limits(uint32_t cpu, uint32_t min, uint32_t max)
 	return 0;
 }
 EXPORT_SYMBOL(msm_cpufreq_set_freq_limits);
+
+void msm_cpufreq_set_min_freq_limit(uint32_t cpu, uint32_t min)
+{
+	struct cpu_freq *limit = &per_cpu(cpu_freq_info, cpu);
+
+	if (unlikely(!limit->limits_init))
+		msm_cpufreq_limits_init();
+
+	if ((min != MSM_CPUFREQ_NO_LIMIT) &&
+		min >= limit->min && min <= limit->max)
+		limit->allowed_min = min;
+	else if (limit->allowed_min != limit->min)
+		limit->allowed_min = limit->min;
+}
+EXPORT_SYMBOL(msm_cpufreq_set_min_freq_limit);
 
 static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 {
@@ -305,35 +313,6 @@ static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 	return 0;
 }
 
-static int __cpuinit msm_cpufreq_cpu_callback(struct notifier_block *nfb,
-		unsigned long action, void *hcpu)
-{
-	unsigned int cpu = (unsigned long)hcpu;
-
-	switch (action) {
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 0;
-		break;
-	case CPU_DOWN_PREPARE:
-	case CPU_DOWN_PREPARE_FROZEN:
-		mutex_lock(&per_cpu(cpufreq_suspend, cpu).suspend_mutex);
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 1;
-		mutex_unlock(&per_cpu(cpufreq_suspend, cpu).suspend_mutex);
-		break;
-	case CPU_DOWN_FAILED:
-	case CPU_DOWN_FAILED_FROZEN:
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 0;
-		break;
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block __refdata msm_cpufreq_cpu_notifier = {
-	.notifier_call = msm_cpufreq_cpu_callback,
-};
-
 /*
  * Define suspend/resume for cpufreq_driver. Kernel will call
  * these during suspend/resume with interrupts disabled. This
@@ -342,23 +321,11 @@ static struct notifier_block __refdata msm_cpufreq_cpu_notifier = {
  */
 static int msm_cpufreq_suspend(struct cpufreq_policy *policy)
 {
-	int cpu;
-
-	for_each_possible_cpu(cpu) {
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 1;
-	}
-
 	return 0;
 }
 
 static int msm_cpufreq_resume(struct cpufreq_policy *policy)
 {
-	int cpu;
-
-	for_each_possible_cpu(cpu) {
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 0;
-	}
-
 	return 0;
 }
 
@@ -384,13 +351,10 @@ static int __init msm_cpufreq_register(void)
 {
 	int cpu;
 
-	for_each_possible_cpu(cpu) {
+	for_each_possible_cpu(cpu)
 		mutex_init(&(per_cpu(cpufreq_suspend, cpu).suspend_mutex));
-		per_cpu(cpufreq_suspend, cpu).device_suspended = 0;
-	}
 
 	msm_cpufreq_wq = alloc_workqueue("msm-cpufreq", WQ_HIGHPRI, 0);
-	register_hotcpu_notifier(&msm_cpufreq_cpu_notifier);
 
 	return cpufreq_register_driver(&msm_cpufreq_driver);
 }
