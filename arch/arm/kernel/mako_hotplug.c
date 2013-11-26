@@ -199,35 +199,22 @@ static void hotplug_suspend(struct work_struct *work)
     stats.counter[0] = 0;
     stats.counter[1] = 0;
 
-    /* cap max frequency to 1190MHz by default */
 	for_each_possible_cpu(cpu)
 	{
-    	msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, 
-            stats.suspend_frequency);
-
 		if (cpu_online(cpu) && cpu)
 			cpu_down(cpu);
 	}
-
-    pr_info("Cpulimit: Suspend - limit cpus max frequency to: %dMHz\n", 
-			stats.suspend_frequency/1000);
 }
 
 static void __ref hotplug_resume(struct work_struct *work)
 {  
     int cpu;
 
-	/* restore max frequency */
 	for_each_possible_cpu(cpu)
 	{
-    	msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, 
-				MSM_CPUFREQ_NO_LIMIT);
-
 		if (cpu_is_offline(cpu) && cpu)
 			cpu_up(cpu);
 	}
-
-    pr_info("Cpulimit: Resume - restore cpus max frequency.\n");
     
     pr_info("Resume starting Hotplug work...\n");
     queue_delayed_work(wq, &decide_hotplug, HZ);
@@ -236,7 +223,6 @@ static void __ref hotplug_resume(struct work_struct *work)
 static int __ref lcd_notifier_callback(struct notifier_block *this,
 				unsigned long event, void *data)
 {
-
 	switch (event) {
 	case LCD_EVENT_ON_START:
 		pr_info("LCD is on.\n");

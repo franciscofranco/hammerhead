@@ -80,14 +80,12 @@ static ssize_t mako_hotplug_control_version(struct device *dev, struct device_at
 }
 
 static DEVICE_ATTR(first_level, 0777, first_level_show, first_level_store);
-static DEVICE_ATTR(suspend_frequency, 0777, suspend_frequency_show, suspend_frequency_store);
 static DEVICE_ATTR(cores_on_touch, 0777, cores_on_touch_show, cores_on_touch_store);
 static DEVICE_ATTR(version, 0777 , mako_hotplug_control_version, NULL);
 
 static struct attribute *mako_hotplug_control_attributes[] =
 {
 	&dev_attr_first_level.attr,
-    &dev_attr_suspend_frequency.attr,
     &dev_attr_cores_on_touch.attr,
 	&dev_attr_version.attr,
 	NULL
