@@ -27,7 +27,7 @@
 
 #include <mach/cpufreq.h>
 
-#define DEFAULT_FIRST_LEVEL 60
+#define DEFAULT_FIRST_LEVEL 70
 #define DEFAULT_SUSPEND_FREQ 1190400
 #define DEFAULT_CORES_ON_TOUCH 2
 #define HIGH_LOAD_COUNTER 20
@@ -56,13 +56,42 @@ static struct cpu_stats
 	.ready_to_online = {false},
 };
 
+struct cpu_load_data {
+	u64 prev_cpu_idle;
+	u64 prev_cpu_wall;
+	struct cpufreq_policy policy;
+};
+
+static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
+
 static struct workqueue_struct *wq;
 static struct workqueue_struct *screen_on_off_wq;
 static struct delayed_work decide_hotplug;
 static struct work_struct suspend;
 static struct work_struct resume;
 
-extern void touchboost(void);
+static inline int get_cpu_load(unsigned int cpu)
+{
+	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
+	u64 cur_wall_time, cur_idle_time;
+	unsigned int idle_time, wall_time;
+	unsigned int cur_load;
+
+	cur_idle_time = get_cpu_idle_time(cpu, &cur_wall_time, true);
+
+	wall_time = (unsigned int) (cur_wall_time - pcpu->prev_cpu_wall);
+	pcpu->prev_cpu_wall = cur_wall_time;
+
+	idle_time = (unsigned int) (cur_idle_time - pcpu->prev_cpu_idle);
+	pcpu->prev_cpu_idle = cur_idle_time;
+
+	if (unlikely(!wall_time || wall_time < idle_time))
+		return 0;
+
+	cur_load = 100 * (wall_time - idle_time) / wall_time;
+
+	return (cur_load * pcpu->policy.cur) / pcpu->policy.max;
+}
 
 static inline void calc_cpu_hotplug(unsigned int counter0,
 									unsigned int counter1)
@@ -134,7 +163,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 
     for_each_online_cpu(cpu) 
     {
-        if (report_load_at_max_freq(cpu) >= stats.default_first_level)
+        if (get_cpu_load(cpu) >= stats.default_first_level)
         {
             if (likely(stats.counter[cpu] < HIGH_LOAD_COUNTER))    
                 stats.counter[cpu] += 2;
@@ -160,9 +189,9 @@ static void hotplug_suspend(struct work_struct *work)
 {	 
     int cpu;
 
-    /* cancel the hotplug work when the screen is off and flush the WQ */
-    cancel_delayed_work(&decide_hotplug);
+    /* First flush the WQ then cancel the hotplug work when the screen is off*/
 	flush_workqueue(wq);
+    cancel_delayed_work(&decide_hotplug);
 
     pr_info("Suspend stopping Hotplug work...\n");
 
@@ -197,8 +226,6 @@ static void __ref hotplug_resume(struct work_struct *work)
 		if (cpu_is_offline(cpu) && cpu)
 			cpu_up(cpu);
 	}
-
-	touchboost();
 
     pr_info("Cpulimit: Resume - restore cpus max frequency.\n");
     
@@ -264,6 +291,9 @@ unsigned int get_cores_on_touch()
 
 int __init mako_hotplug_init(void)
 {
+	int i;
+	struct cpufreq_policy policy;
+
 	pr_info("Mako Hotplug driver started.\n");
 
     wq = alloc_ordered_workqueue("mako_hotplug_workqueue", 0);
@@ -279,11 +309,16 @@ int __init mako_hotplug_init(void)
 	stats.notif.notifier_call = lcd_notifier_callback;
 	if (lcd_register_client(&stats.notif))
 		return -EINVAL;
+
+	for_each_possible_cpu(i) {
+		struct cpu_load_data *pcpu = &per_cpu(cpuload, i);
+		cpufreq_get_policy(&policy, i);
+		pcpu->policy = policy;
+	}
     
 	INIT_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
-    queue_delayed_work(wq, &decide_hotplug, HZ*30);
     
     return 0;
 }
