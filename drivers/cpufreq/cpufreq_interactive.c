@@ -68,7 +68,7 @@ static struct mutex gov_lock;
 static unsigned int hispeed_freq = 1728000;
 
 /* Go to hi speed when CPU load at or above this value. */
-#define DEFAULT_GO_HISPEED_LOAD 85
+#define DEFAULT_GO_HISPEED_LOAD 95
 static unsigned long go_hispeed_load = DEFAULT_GO_HISPEED_LOAD;
 
 /* Target load.  Lower values result in higher CPU speeds. */
@@ -123,6 +123,8 @@ static bool io_is_busy = true;
  */
 #define DEFAULT_INPUT_BOOST_FREQ 1267200
 static int input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
+
+#define CPU_SYNC_FREQ 960000
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		unsigned int event);
@@ -699,14 +701,13 @@ static int thread_migration_notify(struct notifier_block *nb,
 				unsigned long target_cpu, void *arg)
 {
 	unsigned long flags;
-	struct cpufreq_interactive_cpuinfo *target, *source;
+	struct cpufreq_interactive_cpuinfo *target;
 	target = &per_cpu(cpuinfo, target_cpu);
-	source = &per_cpu(cpuinfo, (int)arg);
 	
-	if (target->policy->cur < source->policy->cur)
+	if (target->policy->cur < CPU_SYNC_FREQ)
 	{
-		target->target_freq = source->policy->cur;
-		target->floor_freq = source->policy->cur;
+		target->target_freq = CPU_SYNC_FREQ;
+		target->floor_freq = CPU_SYNC_FREQ;
 		target->floor_validate_time = ktime_to_us(ktime_get());
 
 		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
