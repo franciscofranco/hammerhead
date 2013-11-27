@@ -58,14 +58,6 @@ struct cpufreq_interactive_cpuinfo {
 
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
 
-static struct thread_migration_helpers {
-	unsigned int src_cpu;
-	unsigned int target_cpu;
-} thread_migration_cpus;
-
-static struct workqueue_struct *thread_migration_wq;
-static struct work_struct bump;
-
 /* realtime thread handles frequency scaling */
 static struct task_struct *speedchange_task;
 static cpumask_t speedchange_cpumask;
@@ -376,9 +368,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 	cpu_load = loadadjfreq / pcpu->target_freq;
 	boosted = now < boostpulse_endtime;
 
-	if (!boosted)
-		msm_cpufreq_set_min_freq_limit(data, MSM_CPUFREQ_NO_LIMIT);
-
 	if (cpu_load >= go_hispeed_load) {
 		new_freq = choose_freq(pcpu, loadadjfreq);
 
@@ -585,21 +574,36 @@ static int cpufreq_interactive_speedchange_task(void *data)
 
 static void cpufreq_interactive_boost(void)
 {
-	int cpu;
+	int i;
+	int anyboost = 0;
+	unsigned long flags;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 
-	for_each_possible_cpu(cpu) 
-	{
-		msm_cpufreq_set_min_freq_limit(cpu, input_boost_freq);
+	spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 
-		if (cpu_online(cpu)) 
-		{
-			pcpu = &per_cpu(cpuinfo, cpu);
+	for_each_online_cpu(i) {
+		pcpu = &per_cpu(cpuinfo, i);
 
-			__cpufreq_driver_target(pcpu->policy, input_boost_freq,
-				CPUFREQ_RELATION_H);
+		if (pcpu->target_freq < input_boost_freq) {
+			pcpu->target_freq = input_boost_freq;
+			cpumask_set_cpu(i, &speedchange_cpumask);
+			pcpu->hispeed_validate_time = ktime_to_us(ktime_get());
+			anyboost = 1;
 		}
+
+		/*
+		* Set floor freq and (re)start timer for when last
+		* validated.
+		*/
+
+		pcpu->floor_freq = input_boost_freq;
+		pcpu->floor_validate_time = ktime_to_us(ktime_get());
 	}
+
+	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
+
+	if (anyboost)
+		wake_up_process(speedchange_task);
 }
 
 static int cpufreq_interactive_notifier(
@@ -694,10 +698,23 @@ err:
 static int thread_migration_notify(struct notifier_block *nb,
 				unsigned long target_cpu, void *arg)
 {
-	thread_migration_cpus.src_cpu = (int) arg;
-	thread_migration_cpus.target_cpu = (int) target_cpu;
+	unsigned long flags;
+	struct cpufreq_interactive_cpuinfo *target, *source;
+	target = &per_cpu(cpuinfo, target_cpu);
+	source = &per_cpu(cpuinfo, (int)arg);
+	
+	if (target->policy->cur < source->policy->cur)
+	{
+		target->target_freq = source->policy->cur;
+		target->floor_freq = source->policy->cur;
+		target->floor_validate_time = ktime_to_us(ktime_get());
 
-	queue_work(thread_migration_wq, &bump);
+		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
+		cpumask_set_cpu(target_cpu, &speedchange_cpumask);
+		spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
+
+		wake_up_process(speedchange_task);
+	}
 
 	return NOTIFY_OK;
 }
@@ -705,26 +722,6 @@ static int thread_migration_notify(struct notifier_block *nb,
 static struct notifier_block thread_migration_nb = {
 	.notifier_call = thread_migration_notify,
 };
-
-static void boost_thread_migrated_cpus(struct work_struct *work)
-{
-	struct cpufreq_policy source, target;
-	int src_cur_freq = 0;
-	int ret;
-
-	ret = cpufreq_get_policy(&source, thread_migration_cpus.src_cpu);
-	if (ret)
-		return;
-
-	ret = cpufreq_get_policy(&target, thread_migration_cpus.target_cpu);
-	if (ret)
-		return;
-
-	src_cur_freq = source.cur;
-
-	if (target.cur < src_cur_freq)
-		__cpufreq_driver_target(&target, src_cur_freq, CPUFREQ_RELATION_H);
-}
 
 static ssize_t show_target_loads(
 	struct kobject *kobj, struct attribute *attr, char *buf)
@@ -1201,13 +1198,6 @@ static int __init cpufreq_interactive_init(void)
 		spin_lock_init(&pcpu->load_lock);
 		init_rwsem(&pcpu->enable_sem);
 	}
-
-	thread_migration_wq = alloc_ordered_workqueue("thread_migration_workqueue", 0);
-    
-    if (!thread_migration_wq)
-        return -ENOMEM;
-
-	INIT_WORK(&bump, boost_thread_migrated_cpus);
 
 	spin_lock_init(&target_loads_lock);
 	spin_lock_init(&speedchange_cpumask_lock);
