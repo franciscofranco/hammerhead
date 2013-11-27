@@ -1092,11 +1092,12 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 			       size_t cmd)
 {
 	int i, rc = 0;
-	int val;
+	unsigned int val;
 	int dlen, offset = 0;
 	bool rgb;
 	char tmp[3];
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+	struct mdss_panel_common_pdata *prev_local_data;
 
 	if (cnt) {
 		cnt = 0;
@@ -1119,10 +1120,18 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 	if (!dlen)
 		return -EINVAL;
 
+	prev_local_data = local_pdata;
+
 	for (i = offset; i < dlen; i++) {
 		rc = sscanf(buf, "%d", &val);
 		if (rc != 1)
 			return -EINVAL;
+
+		if (val > 255) {
+			pr_err("%s: Invalid input data %u (0-255)\n", __func__, val);
+			local_pdata = prev_local_data;
+			return -EINVAL;
+		}
 
 		local_pdata->on_cmds.cmds[cmd].payload[i] = val;
 		if (rgb)
