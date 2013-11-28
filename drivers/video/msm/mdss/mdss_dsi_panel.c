@@ -1138,7 +1138,26 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 		cnt = strlen(tmp);
 	}
 
-	/* send commands */
+	return rc;
+}
+
+/************************** sysfs interface ************************/
+
+static ssize_t write_kgamma_send(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	int rc;
+	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+
+	if (cmds_panel_data == NULL) {
+		pr_err("%s: Invalid input data\n", __func__);
+		return -EINVAL;
+	}
+
+	ctrl = container_of(cmds_panel_data, struct mdss_dsi_ctrl_pdata,
+			    panel_data);
+
 	if (local_pdata->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
 
@@ -1147,7 +1166,7 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 	return rc;
 }
 
-/************************** sysfs interface ************************/
+static DEVICE_ATTR(kgamma_send, 0644, NULL, write_kgamma_send);
 
 #define read_one(file_name, cmd)				\
 static ssize_t read_##file_name					\
@@ -1199,6 +1218,7 @@ static struct attribute *dsi_panel_attributes[] = {
 	&dev_attr_kgamma_gn.attr,
 	&dev_attr_kgamma_bp.attr,
 	&dev_attr_kgamma_bn.attr,
+	&dev_attr_kgamma_send.attr,
 	NULL
 };
 
