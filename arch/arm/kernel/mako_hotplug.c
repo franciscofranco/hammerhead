@@ -27,7 +27,7 @@
 
 #include <mach/cpufreq.h>
 
-#define DEFAULT_FIRST_LEVEL 70
+#define DEFAULT_FIRST_LEVEL 60
 #define DEFAULT_SUSPEND_FREQ 1190400
 #define DEFAULT_CORES_ON_TOUCH 2
 #define HIGH_LOAD_COUNTER 20
@@ -59,7 +59,6 @@ static struct cpu_stats
 struct cpu_load_data {
 	u64 prev_cpu_idle;
 	u64 prev_cpu_wall;
-	struct cpufreq_policy policy;
 };
 
 static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
@@ -73,9 +72,12 @@ static struct work_struct resume;
 static inline int get_cpu_load(unsigned int cpu)
 {
 	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
+	struct cpufreq_policy policy;
 	u64 cur_wall_time, cur_idle_time;
 	unsigned int idle_time, wall_time;
 	unsigned int cur_load;
+
+	cpufreq_get_policy(&policy, cpu);
 
 	cur_idle_time = get_cpu_idle_time(cpu, &cur_wall_time, true);
 
@@ -90,7 +92,7 @@ static inline int get_cpu_load(unsigned int cpu)
 
 	cur_load = 100 * (wall_time - idle_time) / wall_time;
 
-	return (cur_load * pcpu->policy.cur) / pcpu->policy.max;
+	return (cur_load * policy.cur) / policy.max;
 }
 
 static inline void calc_cpu_hotplug(unsigned int counter0,
@@ -277,9 +279,6 @@ unsigned int get_cores_on_touch()
 
 int __init mako_hotplug_init(void)
 {
-	int i;
-	struct cpufreq_policy policy;
-
 	pr_info("Mako Hotplug driver started.\n");
 
     wq = alloc_ordered_workqueue("mako_hotplug_workqueue", 0);
@@ -295,12 +294,6 @@ int __init mako_hotplug_init(void)
 	stats.notif.notifier_call = lcd_notifier_callback;
 	if (lcd_register_client(&stats.notif))
 		return -EINVAL;
-
-	for_each_possible_cpu(i) {
-		struct cpu_load_data *pcpu = &per_cpu(cpuload, i);
-		cpufreq_get_policy(&policy, i);
-		pcpu->policy = policy;
-	}
     
 	INIT_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
