@@ -58,17 +58,18 @@ static int update_cpu_max_freq(int cpu, uint32_t max_freq)
 		return ret;
 
 	if (cpu_online(cpu)) {
-		struct cpufreq_policy *policy = cpufreq_cpu_get(cpu);
+		struct cpufreq_policy policy;
+		
+		ret = cpufreq_get_policy(&policy, cpu);
 
-		if (!policy)
+		if (ret)
 			return ret;
 
 		if (max_freq == MSM_CPUFREQ_NO_LIMIT)
-			max_freq = policy->cpuinfo.max_freq;
+			max_freq = policy.max;
 
-		ret = cpufreq_driver_target(policy, max_freq,
+		ret = cpufreq_driver_target(&policy, max_freq,
 			CPUFREQ_RELATION_H);
-		cpufreq_cpu_put(policy);
 	}
 
 	pr_info("%s: Setting cpu%d max frequency to %d\n",
@@ -100,7 +101,7 @@ static void check_temp(struct work_struct *work)
 	tsens_dev.sensor_num = msm_thermal_info.sensor_id;
 	tsens_get_temp(&tsens_dev, &temp);
 
-	if (temp >= temp_threshold)
+	if (temp >= (temp_threshold + 25))
 	{
 		cpu_stats.throttling = true;
 		limit_cpu_freqs(cpu_stats.thermal_steps[0]);
