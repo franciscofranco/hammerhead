@@ -794,9 +794,9 @@ const struct file_operations dwc3_ep_trb_list_fops = {
 	.release		= single_release,
 };
 
-static unsigned int ep_addr_rxdbg_mask;
+static unsigned int ep_addr_rxdbg_mask = 1;
 module_param(ep_addr_rxdbg_mask, uint, S_IRUGO | S_IWUSR);
-static unsigned int ep_addr_txdbg_mask;
+static unsigned int ep_addr_txdbg_mask = 1;
 module_param(ep_addr_txdbg_mask, uint, S_IRUGO | S_IWUSR);
 
 /* Maximum debug message length */
@@ -969,6 +969,28 @@ void dbg_setup(u8 ep_num, const struct usb_ctrlrequest *req)
 			  le16_to_cpu(req->wIndex), le16_to_cpu(req->wLength));
 		dbg_print(ep_num, "SETUP", 0, msg);
 	}
+}
+
+/**
+ * dbg_print_reg: prints a reg value
+ * @name:   reg name
+ * @reg: reg value to be printed
+ */
+void dbg_print_reg(const char *name, int reg)
+{
+	unsigned long flags;
+
+	write_lock_irqsave(&dbg_dwc3_data.lck, flags);
+
+	scnprintf(dbg_dwc3_data.buf[dbg_dwc3_data.idx], DBG_DATA_MSG,
+		  "%s = 0x%08x\n", name, reg);
+
+	dbg_inc(&dbg_dwc3_data.idx);
+
+	write_unlock_irqrestore(&dbg_dwc3_data.lck, flags);
+
+	if (dbg_dwc3_data.tty != 0)
+		pr_notice("%s = 0x%08x\n", name, reg);
 }
 
 /**
