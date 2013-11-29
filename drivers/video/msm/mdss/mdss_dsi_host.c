@@ -1757,6 +1757,8 @@ void mdss_dsi_ack_err_status(unsigned char *base)
 
 	if (status) {
 		MIPI_OUTP(base + 0x0068, status);
+		/* Writing of an extra 0 needed to clear error bits */
+		MIPI_OUTP(base + 0x0068, 0);
 		pr_err("%s: status=%x\n", __func__, status);
 	}
 }
