@@ -56,7 +56,7 @@ static struct cpu_stats
     .counter = {0},
 	.timestamp = {0},
 	.ready_to_online = {false},
-	.gpu_busy_quad_mode = true,
+	.gpu_busy_quad_mode = false,
 };
 
 struct cpu_load_data {
