@@ -21,6 +21,7 @@ extern void update_third_level(unsigned int level);
 extern void update_fourth_level(unsigned int level);
 extern void update_suspend_frequency(unsigned int freq);
 extern void update_cores_on_touch(unsigned int num);
+extern void update_gpu_busy_quad_mode(unsigned int num);
 
 extern unsigned int get_first_level(void);
 extern unsigned int get_second_level(void);
@@ -28,6 +29,7 @@ extern unsigned int get_third_level(void);
 extern unsigned int get_fourth_level(void);
 extern unsigned int get_suspend_frequency(void);
 extern unsigned int get_cores_on_touch(void);
+extern unsigned int get_gpu_busy_quad_mode(void);
 
 extern unsigned int get_input_boost_freq(void);
 extern unsigned int get_min_sample_time(void);

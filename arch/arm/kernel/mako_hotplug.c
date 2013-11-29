@@ -32,6 +32,7 @@
 #define DEFAULT_CORES_ON_TOUCH 2
 #define HIGH_LOAD_COUNTER 20
 #define TIMER HZ
+#define GPU_BUSY_THRESHOLD 60
 
 /*
  * 1000ms = 1 second
@@ -47,6 +48,7 @@ static struct cpu_stats
 	unsigned long timestamp[2];
 	bool ready_to_online[2];
 	struct notifier_block notif;
+	bool gpu_busy_quad_mode;
 } stats = {
 	.default_first_level = DEFAULT_FIRST_LEVEL,
     .suspend_frequency = DEFAULT_SUSPEND_FREQ,
@@ -54,6 +56,7 @@ static struct cpu_stats
     .counter = {0},
 	.timestamp = {0},
 	.ready_to_online = {false},
+	.gpu_busy_quad_mode = true,
 };
 
 struct cpu_load_data {
@@ -98,14 +101,14 @@ static inline int get_cpu_load(unsigned int cpu)
 static inline void calc_cpu_hotplug(unsigned int counter0,
 									unsigned int counter1)
 {
-	//int cpu;
+	int cpu;
 	int i, k;
 
 	stats.ready_to_online[0] = counter0 >= 10;
 	stats.ready_to_online[1] = counter1 >= 10;
 
-	//commented for now
-	/*if (unlikely(gpu_pref_counter >= 60))
+	if (stats.gpu_busy_quad_mode && 
+			unlikely(gpu_pref_counter >= GPU_BUSY_THRESHOLD))
 	{
 		if (num_online_cpus() < num_possible_cpus())
 		{
@@ -117,7 +120,7 @@ static inline void calc_cpu_hotplug(unsigned int counter0,
 		}
 
 		return;
-	}*/
+	}
 
 	for (i = 0, k = 2; i < 2; i++, k++)
 	{
@@ -261,6 +264,11 @@ void update_cores_on_touch(unsigned int num)
     stats.cores_on_touch = num;
 }
 
+void update_gpu_busy_quad_mode(unsigned int num)
+{
+	stats.gpu_busy_quad_mode = num;
+}
+
 unsigned int get_first_level()
 {
     return stats.default_first_level;
@@ -275,6 +283,12 @@ unsigned int get_cores_on_touch()
 {
     return stats.cores_on_touch;
 }
+
+unsigned int get_gpu_busy_quad_mode()
+{
+	return stats.gpu_busy_quad_mode;
+}
+
 /* end sysfs functions from external driver */
 
 int __init mako_hotplug_init(void)
