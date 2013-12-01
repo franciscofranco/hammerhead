@@ -54,6 +54,7 @@ struct cpufreq_interactive_cpuinfo {
 	u64 hispeed_validate_time;
 	struct rw_semaphore enable_sem;
 	int governor_enabled;
+	unsigned int max_load_freq_divided;
 };
 
 static DEFINE_PER_CPU(struct cpufreq_interactive_cpuinfo, cpuinfo);
@@ -362,7 +363,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	cputime_speedadj = pcpu->cputime_speedadj;
 	spin_unlock_irqrestore(&pcpu->load_lock, flags);
 
-	if (WARN_ON_ONCE(!delta_time))
+	if (!delta_time)
 		goto rearm;
 
 	do_div(cputime_speedadj, delta_time);
@@ -370,15 +371,15 @@ static void cpufreq_interactive_timer(unsigned long data)
 	cpu_load = loadadjfreq / pcpu->target_freq;
 	boosted = now < boostpulse_endtime;
 
-	if (cpu_load >= go_hispeed_load) {
-		new_freq = choose_freq(pcpu, loadadjfreq);
+	new_freq = cpu_load * pcpu->max_load_freq_divided;
 
+	if (cpu_load >= go_hispeed_load) {
 		if (new_freq < hispeed_freq)
 			new_freq = hispeed_freq;
+
+		pcpu->hispeed_validate_time = now;
 	} else if (boosted) {
 		new_freq = input_boost_freq; 
-	} else {
-		new_freq = choose_freq(pcpu, loadadjfreq);
 	}
 
 	if (pcpu->target_freq >= hispeed_freq &&
@@ -391,14 +392,15 @@ static void cpufreq_interactive_timer(unsigned long data)
 		goto rearm;
 	}
 
-	pcpu->hispeed_validate_time = now;
-
 	if (cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table,
 					   new_freq, CPUFREQ_RELATION_L,
 					   &index))
 		goto rearm;
 
 	new_freq = pcpu->freq_table[index].frequency;
+
+	if (new_freq == pcpu->policy->cur)
+		goto rearm;
 
 	/*
 	 * Do not scale below floor_freq unless we have been at or above the
@@ -591,7 +593,6 @@ static void cpufreq_interactive_boost(void)
 		if (pcpu->target_freq < input_boost_freq) {
 			pcpu->target_freq = input_boost_freq;
 			cpumask_set_cpu(i, &speedchange_cpumask);
-			pcpu->hispeed_validate_time = ktime_to_us(ktime_get());
 			anyboost = 1;
 		}
 
@@ -1086,6 +1087,7 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			down_write(&pcpu->enable_sem);
 			cpufreq_interactive_timer_start(j);
 			pcpu->governor_enabled = 1;
+			pcpu->max_load_freq_divided = policy->cpuinfo.max_freq / 100;
 			up_write(&pcpu->enable_sem);
 		}
 
