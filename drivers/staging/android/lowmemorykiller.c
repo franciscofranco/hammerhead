@@ -441,7 +441,7 @@ static int __init lowmem_init(void)
 	}
 
 	rc = kobject_init_and_add(lowmem_notify_kobj, &lowmem_notify_kobj_type,
-			mm_kobj, "lowmem_notify");
+			mm_kobj, "lowmemkiller");
 	if(rc) {
 		kfree(lowmem_notify_kobj);
 		return rc;
