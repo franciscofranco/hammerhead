@@ -156,7 +156,8 @@ static void tz_idle(struct kgsl_device *device, struct kgsl_pwrscale *pwrscale)
 		return;
 
 	gpu_stats.total_time_ms = jiffies_to_msecs((long)jiffies - (long)window_time);
-	gpu_stats.busy_time_ms = do_div(priv->bin.busy_time, USEC_PER_MSEC);
+	do_div(priv->bin.busy_time, USEC_PER_MSEC);
+	gpu_stats.busy_time_ms = priv->bin.busy_time;
 
 	/* if busy time is 0 and we're already on the lowest pwrlevel, bail early */
 	if (!gpu_stats.busy_time_ms && pwr->active_pwrlevel == pwr->min_pwrlevel)
