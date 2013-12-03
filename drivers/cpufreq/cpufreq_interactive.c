@@ -704,15 +704,18 @@ static int thread_migration_notify(struct notifier_block *nb,
 				unsigned long target_cpu, void *arg)
 {
 	unsigned long flags;
+	unsigned int boost_freq = CPU_SYNC_FREQ;
 	struct cpufreq_interactive_cpuinfo *target, *source;
 	target = &per_cpu(cpuinfo, target_cpu);
 	source = &per_cpu(cpuinfo, (int)arg);
 	
-	if ((source->policy->cur > target->policy->cur) & 
-			(target->policy->cur < CPU_SYNC_FREQ))
+	if (source->policy->cur > target->policy->cur)
 	{
-		target->target_freq = CPU_SYNC_FREQ;
-		target->floor_freq = CPU_SYNC_FREQ;
+		if (source->policy->cur < boost_freq)
+			boost_freq = source->policy->cur;
+
+		target->target_freq = boost_freq;
+		target->floor_freq = boost_freq;
 		target->floor_validate_time = ktime_to_us(ktime_get());
 
 		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
