@@ -97,6 +97,7 @@ static unsigned int verify_ucode_size(int cpu, u32 patch_size,
 #define F1XH_MPB_MAX_SIZE 2048
 #define F14H_MPB_MAX_SIZE 1824
 #define F15H_MPB_MAX_SIZE 4096
+#define F16H_MPB_MAX_SIZE 3458
 
 	switch (c->x86) {
 	case 0x14:
@@ -104,6 +105,9 @@ static unsigned int verify_ucode_size(int cpu, u32 patch_size,
 		break;
 	case 0x15:
 		max_size = F15H_MPB_MAX_SIZE;
+		break;
+	case 0x16:
+		max_size = F16H_MPB_MAX_SIZE;
 		break;
 	default:
 		max_size = F1XH_MPB_MAX_SIZE;
@@ -143,11 +147,12 @@ static int get_matching_microcode(int cpu, const u8 *ucode_ptr,
 				  unsigned int *current_size)
 {
 	struct microcode_header_amd *mc_hdr;
-	unsigned int actual_size;
+	unsigned int actual_size, patch_size;
 	u16 equiv_cpu_id;
 
 	/* size of the current patch we're staring at */
-	*current_size = *(u32 *)(ucode_ptr + 4) + SECTION_HDR_SIZE;
+	patch_size = *(u32 *)(ucode_ptr + 4);
+	*current_size = patch_size + SECTION_HDR_SIZE;
 
 	equiv_cpu_id = find_equiv_id();
 	if (!equiv_cpu_id)
@@ -174,7 +179,7 @@ static int get_matching_microcode(int cpu, const u8 *ucode_ptr,
 	/*
 	 * now that the header looks sane, verify its size
 	 */
-	actual_size = verify_ucode_size(cpu, *current_size, leftover_size);
+	actual_size = verify_ucode_size(cpu, patch_size, leftover_size);
 	if (!actual_size)
 		return 0;
 
@@ -333,7 +338,7 @@ static enum ucode_state request_microcode_amd(int cpu, struct device *device)
 		snprintf(fw_name, sizeof(fw_name), "amd-ucode/microcode_amd_fam%.2xh.bin", c->x86);
 
 	if (request_firmware(&fw, (const char *)fw_name, device)) {
-		pr_err("failed to load file %s\n", fw_name);
+		pr_debug("failed to load file %s\n", fw_name);
 		goto out;
 	}
 

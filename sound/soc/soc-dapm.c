@@ -1597,7 +1597,15 @@ static int dapm_power_widgets(struct snd_soc_dapm_context *dapm, int event)
 	}
 
 	list_for_each_entry(w, &card->widgets, list) {
-		list_del_init(&w->dirty);
+		switch (w->id) {
+		case snd_soc_dapm_pre:
+		case snd_soc_dapm_post:
+			/* These widgets always need to be powered */
+			break;
+		default:
+			list_del_init(&w->dirty);
+			break;
+		}
 
 		if (w->power) {
 			d = w->dapm;
@@ -1733,7 +1741,7 @@ static ssize_t dapm_widget_power_read_file(struct file *file,
 				w->active ? "active" : "inactive");
 
 	list_for_each_entry(p, &w->sources, list_sink) {
-		if (p->connected && !p->connected(w, p->sink))
+		if (p->connected && !p->connected(w, p->source))
 			continue;
 
 		if (p->connect)
@@ -3364,7 +3372,7 @@ void snd_soc_dapm_shutdown(struct snd_soc_card *card)
 {
 	struct snd_soc_codec *codec;
 
-	list_for_each_entry(codec, &card->codec_dev_list, list) {
+	list_for_each_entry(codec, &card->codec_dev_list, card_list) {
 		soc_dapm_shutdown_codec(&codec->dapm);
 		snd_soc_dapm_set_bias_level(&codec->dapm, SND_SOC_BIAS_OFF);
 	}

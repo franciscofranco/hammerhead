@@ -151,14 +151,32 @@ static int snd_usb_create_stream(struct snd_usb_audio *chip, int ctrlif, int int
 		return -EINVAL;
 	}
 
+	alts = &iface->altsetting[0];
+	altsd = get_iface_desc(alts);
+
+	/*
+	 * Android with both accessory and audio interfaces enabled gets the
+	 * interface numbers wrong.
+	 */
+	if ((chip->usb_id == USB_ID(0x18d1, 0x2d04) ||
+	     chip->usb_id == USB_ID(0x18d1, 0x2d05)) &&
+	    interface == 0 &&
+	    altsd->bInterfaceClass == USB_CLASS_VENDOR_SPEC &&
+	    altsd->bInterfaceSubClass == USB_SUBCLASS_VENDOR_SPEC) {
+		interface = 2;
+		iface = usb_ifnum_to_if(dev, interface);
+		if (!iface)
+			return -EINVAL;
+		alts = &iface->altsetting[0];
+		altsd = get_iface_desc(alts);
+	}
+
 	if (usb_interface_claimed(iface)) {
 		snd_printdd(KERN_INFO "%d:%d:%d: skipping, already claimed\n",
 						dev->devnum, ctrlif, interface);
 		return -EINVAL;
 	}
 
-	alts = &iface->altsetting[0];
-	altsd = get_iface_desc(alts);
 	if ((altsd->bInterfaceClass == USB_CLASS_AUDIO ||
 	     altsd->bInterfaceClass == USB_CLASS_VENDOR_SPEC) &&
 	    altsd->bInterfaceSubClass == USB_SUBCLASS_MIDISTREAMING) {
@@ -338,7 +356,7 @@ static int snd_usb_audio_create(struct usb_device *dev, int idx,
 		return -ENOMEM;
 	}
 
-	mutex_init(&chip->shutdown_mutex);
+	init_rwsem(&chip->shutdown_rwsem);
 	chip->index = idx;
 	chip->dev = dev;
 	chip->card = card;
@@ -557,9 +575,11 @@ static void snd_usb_audio_disconnect(struct usb_device *dev,
 		return;
 
 	card = chip->card;
-	mutex_lock(&register_mutex);
-	mutex_lock(&chip->shutdown_mutex);
+	down_write(&chip->shutdown_rwsem);
 	chip->shutdown = 1;
+	up_write(&chip->shutdown_rwsem);
+
+	mutex_lock(&register_mutex);
 	chip->num_interfaces--;
 	if (chip->num_interfaces <= 0) {
 		snd_card_disconnect(card);
@@ -576,11 +596,9 @@ static void snd_usb_audio_disconnect(struct usb_device *dev,
 			snd_usb_mixer_disconnect(p);
 		}
 		usb_chip[chip->index] = NULL;
-		mutex_unlock(&chip->shutdown_mutex);
 		mutex_unlock(&register_mutex);
 		snd_card_free_when_closed(card);
 	} else {
-		mutex_unlock(&chip->shutdown_mutex);
 		mutex_unlock(&register_mutex);
 	}
 	switch_set_state(usbaudiosdev, 0);
@@ -613,16 +631,22 @@ int snd_usb_autoresume(struct snd_usb_audio *chip)
 {
 	int err = -ENODEV;
 
-	if (!chip->shutdown && !chip->probing)
+	down_read(&chip->shutdown_rwsem);
+	if (chip->probing)
+		err = 0;
+	else if (!chip->shutdown)
 		err = usb_autopm_get_interface(chip->pm_intf);
+	up_read(&chip->shutdown_rwsem);
 
 	return err;
 }
 
 void snd_usb_autosuspend(struct snd_usb_audio *chip)
 {
+	down_read(&chip->shutdown_rwsem);
 	if (!chip->shutdown && !chip->probing)
 		usb_autopm_put_interface(chip->pm_intf);
+	up_read(&chip->shutdown_rwsem);
 }
 
 static int usb_audio_suspend(struct usb_interface *intf, pm_message_t message)

@@ -410,19 +410,25 @@ static int logi_dj_recv_send_report(struct dj_receiver_dev *djrcv_dev,
 				    struct dj_report *dj_report)
 {
 	struct hid_device *hdev = djrcv_dev->hdev;
-	int sent_bytes;
+	struct hid_report *report;
+	struct hid_report_enum *output_report_enum;
+	u8 *data = (u8 *)(&dj_report->device_index);
+	unsigned int i;
 
-	if (!hdev->hid_output_raw_report) {
-		dev_err(&hdev->dev, "%s:"
-			"hid_output_raw_report is null\n", __func__);
+	output_report_enum = &hdev->report_enum[HID_OUTPUT_REPORT];
+	report = output_report_enum->report_id_hash[REPORT_ID_DJ_SHORT];
+
+	if (!report) {
+		dev_err(&hdev->dev, "%s: unable to find dj report\n", __func__);
 		return -ENODEV;
 	}
 
-	sent_bytes = hdev->hid_output_raw_report(hdev, (u8 *) dj_report,
-						 sizeof(struct dj_report),
-						 HID_OUTPUT_REPORT);
+	for (i = 0; i < DJREPORT_SHORT_LENGTH - 1; i++)
+		report->field[0]->value[i] = data[i];
 
-	return (sent_bytes < 0) ? sent_bytes : 0;
+	usbhid_submit_report(hdev, report, USB_DIR_OUT);
+
+	return 0;
 }
 
 static int logi_dj_recv_query_paired_devices(struct dj_receiver_dev *djrcv_dev)
@@ -732,6 +738,12 @@ static int logi_dj_probe(struct hid_device *hdev,
 	if (retval) {
 		dev_err(&hdev->dev,
 			"%s:parse of interface 2 failed\n", __func__);
+		goto hid_parse_fail;
+	}
+
+	if (!hid_validate_values(hdev, HID_OUTPUT_REPORT, REPORT_ID_DJ_SHORT,
+				 0, DJREPORT_SHORT_LENGTH - 1)) {
+		retval = -ENODEV;
 		goto hid_parse_fail;
 	}
 

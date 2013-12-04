@@ -616,7 +616,7 @@ blk_init_allocated_queue(struct request_queue *q, request_fn_proc *rfn,
 	q->request_fn		= rfn;
 	q->prep_rq_fn		= NULL;
 	q->unprep_rq_fn		= NULL;
-	q->queue_flags		= QUEUE_FLAG_DEFAULT;
+	q->queue_flags		|= QUEUE_FLAG_DEFAULT;
 
 	/* Override internal queue lock with supplied lock pointer */
 	if (lock)
@@ -2169,6 +2169,7 @@ void blk_start_request(struct request *req)
 	if (unlikely(blk_bidi_rq(req)))
 		req->next_rq->resid_len = blk_rq_bytes(req->next_rq);
 
+	BUG_ON(test_bit(REQ_ATOM_COMPLETE, &req->atomic_flags));
 	blk_add_timer(req);
 }
 EXPORT_SYMBOL(blk_start_request);

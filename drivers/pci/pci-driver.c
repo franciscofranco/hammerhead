@@ -663,6 +663,7 @@ static int pci_pm_suspend(struct device *dev)
 		goto Fixup;
 	}
 
+	pci_dev->state_saved = false;
 	if (pm->suspend) {
 		pci_power_t prev = pci_dev->current_state;
 		int error;
@@ -724,6 +725,18 @@ static int pci_pm_suspend_noirq(struct device *dev)
 	}
 
 	pci_pm_set_unknown_state(pci_dev);
+
+	/*
+	 * Some BIOSes from ASUS have a bug: If a USB EHCI host controller's
+	 * PCI COMMAND register isn't 0, the BIOS assumes that the controller
+	 * hasn't been quiesced and tries to turn it off.  If the controller
+	 * is already in D3, this can hang or cause memory corruption.
+	 *
+	 * Since the value of the COMMAND register doesn't matter once the
+	 * device has been suspended, we can safely set it to 0 here.
+	 */
+	if (pci_dev->class == PCI_CLASS_SERIAL_USB_EHCI)
+		pci_write_config_word(pci_dev, PCI_COMMAND, 0);
 
 	return 0;
 }
@@ -797,6 +810,7 @@ static int pci_pm_freeze(struct device *dev)
 		return 0;
 	}
 
+	pci_dev->state_saved = false;
 	if (pm->freeze) {
 		int error;
 
@@ -885,6 +899,7 @@ static int pci_pm_poweroff(struct device *dev)
 		goto Fixup;
 	}
 
+	pci_dev->state_saved = false;
 	if (pm->poweroff) {
 		int error;
 
@@ -922,6 +937,13 @@ static int pci_pm_poweroff_noirq(struct device *dev)
 
 	if (!pci_dev->state_saved && !pci_is_bridge(pci_dev))
 		pci_prepare_to_sleep(pci_dev);
+
+	/*
+	 * The reason for doing this here is the same as for the analogous code
+	 * in pci_pm_suspend_noirq().
+	 */
+	if (pci_dev->class == PCI_CLASS_SERIAL_USB_EHCI)
+		pci_write_config_word(pci_dev, PCI_COMMAND, 0);
 
 	return 0;
 }
@@ -996,6 +1018,7 @@ static int pci_pm_runtime_suspend(struct device *dev)
 	if (!pm || !pm->runtime_suspend)
 		return -ENOSYS;
 
+	pci_dev->state_saved = false;
 	error = pm->runtime_suspend(dev);
 	suspend_report_result(pm->runtime_suspend, error);
 	if (error)

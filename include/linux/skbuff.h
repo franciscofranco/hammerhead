@@ -225,14 +225,11 @@ enum {
 	/* device driver is going to provide hardware time stamp */
 	SKBTX_IN_PROGRESS = 1 << 2,
 
-	/* ensure the originating sk reference is available on driver level */
-	SKBTX_DRV_NEEDS_SK_REF = 1 << 3,
-
 	/* device driver supports TX zero-copy buffers */
-	SKBTX_DEV_ZEROCOPY = 1 << 4,
+	SKBTX_DEV_ZEROCOPY = 1 << 3,
 
 	/* generate wifi status information (where possible) */
-	SKBTX_WIFI_STATUS = 1 << 5,
+	SKBTX_WIFI_STATUS = 1 << 4,
 };
 
 /*
@@ -482,7 +479,7 @@ struct sk_buff {
 	union {
 		__u32		mark;
 		__u32		dropcount;
-		__u32		avail_size;
+		__u32		reserved_tailroom;
 	};
 
 	sk_buff_data_t		transport_header;
@@ -761,6 +758,16 @@ static inline int skb_cloned(const struct sk_buff *skb)
 {
 	return skb->cloned &&
 	       (atomic_read(&skb_shinfo(skb)->dataref) & SKB_DATAREF_MASK) != 1;
+}
+
+static inline int skb_unclone(struct sk_buff *skb, gfp_t pri)
+{
+	might_sleep_if(pri & __GFP_WAIT);
+
+	if (skb_cloned(skb))
+		return pskb_expand_head(skb, 0, 0, pri);
+
+	return 0;
 }
 
 /**
@@ -1201,6 +1208,11 @@ static inline int skb_pagelen(const struct sk_buff *skb)
 	return len + skb_headlen(skb);
 }
 
+static inline bool skb_has_frags(const struct sk_buff *skb)
+{
+	return skb_shinfo(skb)->nr_frags;
+}
+
 /**
  * __skb_fill_page_desc - initialise a paged fragment in an skb
  * @skb: buffer containing fragment to be initialised
@@ -1376,7 +1388,10 @@ static inline int skb_tailroom(const struct sk_buff *skb)
  */
 static inline int skb_availroom(const struct sk_buff *skb)
 {
-	return skb_is_nonlinear(skb) ? 0 : skb->avail_size - skb->len;
+	if (skb_is_nonlinear(skb))
+		return 0;
+
+	return skb->end - skb->tail - skb->reserved_tailroom;
 }
 
 /**
@@ -1881,8 +1896,6 @@ static inline int __skb_cow(struct sk_buff *skb, unsigned int headroom,
 {
 	int delta = 0;
 
-	if (headroom < NET_SKB_PAD)
-		headroom = NET_SKB_PAD;
 	if (headroom > skb_headroom(skb))
 		delta = headroom - skb_headroom(skb);
 
@@ -2391,6 +2404,13 @@ static inline void nf_reset(struct sk_buff *skb)
 #ifdef CONFIG_BRIDGE_NETFILTER
 	nf_bridge_put(skb->nf_bridge);
 	skb->nf_bridge = NULL;
+#endif
+}
+
+static inline void nf_reset_trace(struct sk_buff *skb)
+{
+#if IS_ENABLED(CONFIG_NETFILTER_XT_TARGET_TRACE)
+	skb->nf_trace = 0;
 #endif
 }
 
