@@ -73,7 +73,8 @@ static unsigned int hispeed_freq = 1728000;
 static unsigned long go_hispeed_load = DEFAULT_GO_HISPEED_LOAD;
 
 /* Sampling down factor to be applied to min_sample_time at max freq */
-static unsigned int sampling_down_factor;
+#define DEFAULT_SAMPLING_DOWN_FACTOR 120000
+static unsigned int sampling_down_factor = DEFAULT_SAMPLING_DOWN_FACTOR;
 
 /* Target load.  Lower values result in higher CPU speeds. */
 #define DEFAULT_TARGET_LOAD 90
@@ -127,6 +128,8 @@ static bool io_is_busy = true;
  */
 #define DEFAULT_INPUT_BOOST_FREQ 1267200
 static int input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
+static struct workqueue_struct *input_wq;
+static struct work_struct input_work;
 
 #define CPU_SYNC_FREQ 960000
 
@@ -593,22 +596,24 @@ static int cpufreq_interactive_speedchange_task(void *data)
 	return 0;
 }
 
-static void cpufreq_interactive_boost(void)
+static void cpufreq_interactive_boost(struct work_struct *work)
 {
 	int i;
-	int anyboost = 0;
-	unsigned long flags;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 
-	spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 
 	for_each_online_cpu(i) {
 		pcpu = &per_cpu(cpuinfo, i);
 
 		if (pcpu->target_freq < input_boost_freq) {
 			pcpu->target_freq = input_boost_freq;
-			cpumask_set_cpu(i, &speedchange_cpumask);
-			anyboost = 1;
+		}
+
+		if (pcpu->policy->cur < input_boost_freq)
+		{
+			__cpufreq_driver_target(pcpu->policy,
+					input_boost_freq,
+					CPUFREQ_RELATION_H);
 		}
 
 		/*
@@ -619,11 +624,6 @@ static void cpufreq_interactive_boost(void)
 		pcpu->floor_freq = input_boost_freq;
 		pcpu->floor_validate_time = ktime_to_us(ktime_get());
 	}
-
-	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags);
-
-	if (anyboost)
-		wake_up_process(speedchange_task);
 }
 
 static int cpufreq_interactive_notifier(
@@ -1006,7 +1006,7 @@ static ssize_t store_boostpulse(struct kobject *kobj, struct attribute *attr,
 
 	boostpulse_endtime = ktime_to_us(ktime_get()) + boostpulse_duration_val;
 	trace_cpufreq_interactive_boost("pulse");
-	cpufreq_interactive_boost();
+	queue_work(input_wq, &input_work);
 	return count;
 }
 
@@ -1248,6 +1248,13 @@ static int __init cpufreq_interactive_init(void)
 		init_rwsem(&pcpu->enable_sem);
 	}
 
+	input_wq = alloc_workqueue("input_wq", WQ_HIGHPRI, 1);
+
+	if (!input_wq)
+		return -EINVAL;
+
+	INIT_WORK(&input_work, cpufreq_interactive_boost);
+
 	spin_lock_init(&target_loads_lock);
 	spin_lock_init(&speedchange_cpumask_lock);
 	spin_lock_init(&above_hispeed_delay_lock);
@@ -1278,6 +1285,7 @@ static void __exit cpufreq_interactive_exit(void)
 	cpufreq_unregister_governor(&cpufreq_gov_interactive);
 	kthread_stop(speedchange_task);
 	put_task_struct(speedchange_task);
+	destroy_workqueue(input_wq);
 }
 
 module_exit(cpufreq_interactive_exit);
