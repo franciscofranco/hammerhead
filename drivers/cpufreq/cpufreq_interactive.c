@@ -623,6 +623,15 @@ static void cpufreq_interactive_boost(struct work_struct *work)
 
 		pcpu->floor_freq = input_boost_freq;
 		pcpu->floor_validate_time = ktime_to_us(ktime_get());
+
+		/* 
+		 * Only boost cpu0 and cpu1 even if other cores are online. If there's
+		 * a task migration the thread migration notifier will boost the target
+		 * and make up for the lack of input boost on cpu2 and cpu3 during a
+		 * input interaction
+		 */
+		if (i)
+			break;
 	}
 }
 
@@ -1006,7 +1015,7 @@ static ssize_t store_boostpulse(struct kobject *kobj, struct attribute *attr,
 
 	boostpulse_endtime = ktime_to_us(ktime_get()) + boostpulse_duration_val;
 	trace_cpufreq_interactive_boost("pulse");
-	queue_work(input_wq, &input_work);
+	queue_work_on(0, input_wq, &input_work);
 	return count;
 }
 
