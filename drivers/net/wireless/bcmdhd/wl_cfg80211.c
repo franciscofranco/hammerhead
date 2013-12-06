@@ -338,8 +338,7 @@ static s32 wl_notify_escan_complete(struct wl_priv *wl,
 #if (LINUX_VERSION_CODE > KERNEL_VERSION(3, 2, 0)) || 0
 static s32 wl_cfg80211_tdls_oper(struct wiphy *wiphy, struct net_device *dev,
 	u8 *peer, enum nl80211_tdls_operation oper);
-#endif /* LINUX_VERSION_CODE > KERNEL_VERSION(3, 2, 0) */
-static int wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev);
+#endif 
 
 /*
  * event & event Q handlers for cfg80211 interfaces
@@ -3158,11 +3157,6 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 #if !defined(ESCAN_RESULT_PATCH)
 	if (wl->scan_request) {
 		wl_notify_escan_complete(wl, dev, true, true);
-	}
-#endif
-#ifdef WL_SCHED_SCAN
-	if (wl->sched_scan_req) {
-		wl_cfg80211_sched_scan_stop(wiphy, wl_to_prmry_ndev(wl));
 	}
 #endif
 #if defined(ESCAN_RESULT_PATCH)
@@ -6362,8 +6356,7 @@ fail:
 #define PNO_TIME		30
 #define PNO_REPEAT		4
 #define PNO_FREQ_EXPO_MAX	2
-static int
-wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
+int wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
                              struct net_device *dev,
                              struct cfg80211_sched_scan_request *request)
 {
@@ -6427,8 +6420,7 @@ wl_cfg80211_sched_scan_start(struct wiphy *wiphy,
 	return 0;
 }
 
-static int
-wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
+int wl_cfg80211_sched_scan_stop(struct wiphy *wiphy, struct net_device *dev)
 {
 	struct wl_priv *wl = wiphy_priv(wiphy);
 
