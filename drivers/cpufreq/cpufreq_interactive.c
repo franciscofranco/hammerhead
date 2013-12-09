@@ -1257,7 +1257,7 @@ static int __init cpufreq_interactive_init(void)
 		init_rwsem(&pcpu->enable_sem);
 	}
 
-	input_wq = alloc_workqueue("input_wq", WQ_HIGHPRI, 1);
+	input_wq = alloc_workqueue("input_wq", 0, 1);
 
 	if (!input_wq)
 		return -EINVAL;
