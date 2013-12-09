@@ -360,8 +360,12 @@ static int mhl_sii_wait_for_rgnd(struct mhl_tx_ctrl *mhl_ctrl)
 	/* let isr handle RGND interrupt */
 	pr_debug("%s:%u\n", __func__, __LINE__);
 	INIT_COMPLETION(mhl_ctrl->rgnd_done);
-	timeout = wait_for_completion_interruptible_timeout
-		(&mhl_ctrl->rgnd_done, HZ);
+	/*
+	 * after toggling reset line and enabling disc
+	 * tx can take a while to generate intr
+	 */
+	timeout = wait_for_completion_timeout
+		(&mhl_ctrl->rgnd_done, HZ * 3);
 	if (!timeout) {
 		/* most likely nothing plugged in USB */
 		/* USB HOST connected or already in USB mode */
@@ -1244,7 +1248,7 @@ int mhl_send_msc_command(struct mhl_tx_ctrl *mhl_ctrl,
 
 	INIT_COMPLETION(mhl_ctrl->msc_cmd_done);
 	MHL_SII_REG_NAME_WR(REG_CBUS_PRI_START, start_bit);
-	timeout = wait_for_completion_interruptible_timeout
+	timeout = wait_for_completion_timeout
 		(&mhl_ctrl->msc_cmd_done, msecs_to_jiffies(T_ABORT_NEXT));
 	if (!timeout) {
 		pr_err("%s: cbus_command_send timed out!\n", __func__);
