@@ -130,6 +130,8 @@ static bool io_is_busy = true;
 static int input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
 static struct workqueue_struct *input_wq;
 static struct work_struct input_work;
+#define DEFAULT_BOOSTED_TIME_INTERVAL 100
+u32 boosted_time;
 
 #define CPU_SYNC_FREQ 960000
 
@@ -601,6 +603,10 @@ static void cpufreq_interactive_boost(struct work_struct *work)
 	int i;
 	struct cpufreq_interactive_cpuinfo *pcpu;
 
+	if (boosted_time + msecs_to_jiffies(DEFAULT_BOOSTED_TIME_INTERVAL) > jiffies)
+		return;
+
+	boosted_time = jiffies;
 
 	for_each_online_cpu(i) {
 		pcpu = &per_cpu(cpuinfo, i);
