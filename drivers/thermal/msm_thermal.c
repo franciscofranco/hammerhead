@@ -25,15 +25,16 @@
 #include <linux/of.h>
 #include <mach/cpufreq.h>
 
-#define THROTTLE_FREQUENCY 1267200
-#define PANIC_THROTTLE_FREQUENCY 729600
-
 static struct cpus {
 	bool throttling;
 	int thermal_steps[5];
+	uint32_t limited_max_freq;
+	unsigned int max_freq;
+	struct cpufreq_policy policy;
 } cpu_stats = {
 	.throttling = false,
-	.thermal_steps = {729600, 1190400, 1497600, 1728000, 1958400},
+	.thermal_steps = {729600, 1190400, 1497600, 1728000},
+	.limited_max_freq = UINT_MAX,
 };
 
 unsigned int temp_threshold = 70;
@@ -49,47 +50,54 @@ unsigned short get_threshold(void)
 	return temp_threshold;
 }
 
-static int update_cpu_max_freq(int cpu, uint32_t max_freq)
+static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
+		unsigned long event, void *data)
 {
-	int ret = 0;
+	struct cpufreq_policy *policy = data;
 
-	ret = msm_cpufreq_set_freq_limits(cpu, MSM_CPUFREQ_NO_LIMIT, max_freq);
-	if (ret)
-		return ret;
-
-	if (cpu_online(cpu)) {
-		struct cpufreq_policy policy;
-		
-		ret = cpufreq_get_policy(&policy, cpu);
-
-		if (ret)
-			return ret;
-
-		if (max_freq == MSM_CPUFREQ_NO_LIMIT)
-			max_freq = policy.max;
-
-		ret = cpufreq_driver_target(&policy, max_freq,
-			CPUFREQ_RELATION_H);
+	switch (event) {
+	case CPUFREQ_INCOMPATIBLE:
+		cpufreq_verify_within_limits(policy, 0,
+				cpu_stats.limited_max_freq);
+		break;
 	}
+	return NOTIFY_OK;
+}
+
+static struct notifier_block msm_thermal_cpufreq_notifier = {
+	.notifier_call = msm_thermal_cpufreq_callback,
+};
+
+static void update_cpu_max_freq(int cpu, uint32_t max_freq)
+{
+	cpufreq_update_policy(cpu);
 
 	pr_info("%s: Setting cpu%d max frequency to %d\n",
-				KBUILD_MODNAME, cpu, max_freq);
-
-	return ret;
+				KBUILD_MODNAME, cpu, cpu_stats.limited_max_freq);
 }
 
 static void limit_cpu_freqs(uint32_t max_freq)
 {
-	int ret;
     int cpu;
+
+	if (cpu_stats.limited_max_freq == max_freq)
+		return;
+
+	cpu_stats.limited_max_freq = max_freq;
     
 	/* Update new limits */
-	for_each_possible_cpu(cpu) {
-		ret = update_cpu_max_freq(cpu, max_freq);
-		if (ret)
-			pr_debug(
-			"%s: Unable to limit cpu%d max freq to %d\n",
-					KBUILD_MODNAME, cpu, max_freq);
+	get_online_cpus();
+	for_each_online_cpu(cpu) 
+		update_cpu_max_freq(cpu, max_freq);
+	put_online_cpus();
+}
+
+void update_max_freq_buffer(void)
+{
+	if (!cpu_stats.throttling)
+	{
+		cpufreq_get_policy(&cpu_stats.policy, 0);
+		cpu_stats.max_freq = cpu_stats.policy.max;
 	}
 }
 
@@ -101,45 +109,45 @@ static void check_temp(struct work_struct *work)
 	tsens_dev.sensor_num = msm_thermal_info.sensor_id;
 	tsens_get_temp(&tsens_dev, &temp);
 
-	if (temp >= (temp_threshold + 25))
+	/* most of the time the device is not hot so reschedule early */
+	if (likely(temp <= temp_threshold))
+	{
+		if (unlikely(cpu_stats.throttling))
+		{
+			limit_cpu_freqs(cpu_stats.max_freq);
+			cpu_stats.throttling = false;
+		}
+
+		goto reschedule;
+	}
+
+	update_max_freq_buffer();
+
+	if (temp >= (temp_threshold + 20))
 	{
 		cpu_stats.throttling = true;
 		limit_cpu_freqs(cpu_stats.thermal_steps[0]);
 	}
 
-	else if (temp >= (temp_threshold + 20))
+	else if (temp >= (temp_threshold + 15))
 	{
 		cpu_stats.throttling = true;
 		limit_cpu_freqs(cpu_stats.thermal_steps[1]);
 	}
     
-	else if (temp >= (temp_threshold + 15))
+	else if (temp >= (temp_threshold + 10))
 	{
 		cpu_stats.throttling = true;
 		limit_cpu_freqs(cpu_stats.thermal_steps[2]);
 	}
 
-	else if (temp >= (temp_threshold + 10))
+	else if (temp >= (temp_threshold + 5))
 	{
 		cpu_stats.throttling = true;
 		limit_cpu_freqs(cpu_stats.thermal_steps[3]);
 	}
 
-	else if (temp >= (temp_threshold + 5))
-	{
-		cpu_stats.throttling = true;
-		limit_cpu_freqs(cpu_stats.thermal_steps[4]);
-	}
-
-	else if (temp <= temp_threshold)
-	{
-		if (cpu_stats.throttling)
-		{
-			limit_cpu_freqs(MSM_CPUFREQ_NO_LIMIT);
-			cpu_stats.throttling = false;
-		}
-	}
-
+reschedule:
 	queue_delayed_work(wq, &check_temp_work, HZ);
 }
 
@@ -155,6 +163,9 @@ int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
     
     if (!wq)
         return -ENOMEM;
+
+	cpufreq_register_notifier(&msm_thermal_cpufreq_notifier,
+			CPUFREQ_POLICY_NOTIFIER);
     
 	INIT_DELAYED_WORK(&check_temp_work, check_temp);
 	queue_delayed_work(wq, &check_temp_work, HZ*30);
