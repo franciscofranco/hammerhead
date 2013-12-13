@@ -44,6 +44,7 @@ extern void lm3630_lcd_backlight_set_level(int level);
 
 static struct mdss_dsi_phy_ctrl phy_params;
 static struct mdss_panel_common_pdata *local_pdata;
+static struct work_struct send_cmds_work;
 struct mdss_panel_data *cmds_panel_data;
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -1156,18 +1157,13 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 	return rc;
 }
 
-/************************** sysfs interface ************************/
-
-static ssize_t write_kgamma_send(struct device *dev,
-				 struct device_attribute *attr,
-				 const char *buf, size_t count)
+static void send_local_on_cmds(struct work_struct *work)
 {
-	int rc;
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 
 	if (cmds_panel_data == NULL) {
 		pr_err("%s: Invalid input data\n", __func__);
-		return -EINVAL;
+		return;
 	}
 
 	ctrl = container_of(cmds_panel_data, struct mdss_dsi_ctrl_pdata,
@@ -1177,8 +1173,22 @@ static ssize_t write_kgamma_send(struct device *dev,
 		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
 
 	pr_info("%s\n", __func__);
+}
 
-	return rc;
+/************************** sysfs interface ************************/
+
+static ssize_t write_kgamma_send(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	if (!cmds_panel_data->panel_info.panel_power_on) {
+		pr_err("%s: Panel off, failed to send commands\n", __func__);
+		return -EPERM;
+	}
+
+	schedule_work(&send_cmds_work);
+
+	return count;
 }
 
 static DEVICE_ATTR(kgamma_send, 0644, NULL, write_kgamma_send);
@@ -1271,6 +1281,8 @@ static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 	rc = dsi_panel_device_register(pdev, &vendor_pdata);
 	if (rc)
 		return rc;
+
+	INIT_WORK(&send_cmds_work, send_local_on_cmds);
 
 	local_pdata = &vendor_pdata;
 	if (!local_pdata)
