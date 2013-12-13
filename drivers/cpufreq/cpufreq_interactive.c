@@ -143,8 +143,8 @@ u32 boosted_time;
  * If the max load among the other CPUs is higher than sync_freq_load_threshold
  * then do not let the frequency to drop below sync_freq
  */
-static unsigned int sync_freq_load_threshold;
-static unsigned int sync_freq;
+static unsigned int sync_freq_load_threshold = 50;
+static unsigned int sync_freq = CPU_SYNC_FREQ;
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 		unsigned int event);
