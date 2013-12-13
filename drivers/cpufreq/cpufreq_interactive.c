@@ -420,8 +420,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	}
 	else if (boosted)
 	{
-		if (new_freq < input_boost_freq)
-			new_freq = input_boost_freq;
+		new_freq = input_boost_freq;
 	}
 	else 
 	{
