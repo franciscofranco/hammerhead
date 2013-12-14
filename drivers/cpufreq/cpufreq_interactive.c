@@ -416,7 +416,12 @@ static void cpufreq_interactive_timer(unsigned long data)
 		if (pcpu->target_freq < hispeed_freq) 
 			new_freq = hispeed_freq;
 		else
+		{
 			new_freq = choose_freq(pcpu, loadadjfreq);
+
+			if (new_freq < hispeed_freq)
+				new_freq = hispeed_freq;
+		}
 	}
 	else if (boosted)
 	{
@@ -440,6 +445,8 @@ static void cpufreq_interactive_timer(unsigned long data)
 			pcpu->policy->cur, new_freq);
 		goto rearm;
 	}
+
+	pcpu->hispeed_validate_time = now;
 
 	if (cpufreq_frequency_table_target(pcpu->policy, pcpu->freq_table,
 					   new_freq, CPUFREQ_RELATION_L,
