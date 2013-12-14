@@ -402,6 +402,13 @@ static void cpufreq_interactive_timer(unsigned long data)
 	for_each_online_cpu(i) {
 		struct cpufreq_interactive_cpuinfo *picpu =
 						&per_cpu(cpuinfo, i);
+		if (!down_read_trylock(&picpu->enable_sem))
+			continue;
+		if (!picpu->governor_enabled) {
+			up_read(&picpu->enable_sem);
+			continue;
+		}
+		up_read(&picpu->enable_sem);
 		if (i == data)
 			continue;
 		if (max_load_other_cpu < picpu->prev_load)
