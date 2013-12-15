@@ -45,18 +45,18 @@ static struct cpu_stats
     unsigned int suspend_frequency;
     unsigned int cores_on_touch;
     unsigned int counter[2];
-	unsigned long timestamp[2];
-	bool ready_to_online[2];
+	u64 timestamp[2];
 	struct notifier_block notif;
 	bool gpu_busy_quad_mode;
+	bool first_boot;
 } stats = {
 	.default_first_level = DEFAULT_FIRST_LEVEL,
     .suspend_frequency = DEFAULT_SUSPEND_FREQ,
     .cores_on_touch = DEFAULT_CORES_ON_TOUCH,
     .counter = {0},
 	.timestamp = {0},
-	.ready_to_online = {false},
 	.gpu_busy_quad_mode = false,
+	.first_boot = true,
 };
 
 struct cpu_load_data {
@@ -98,15 +98,11 @@ static inline int get_cpu_load(unsigned int cpu)
 	return (cur_load * policy.cur) / policy.max;
 }
 
-static inline void calc_cpu_hotplug(unsigned int counter0,
-									unsigned int counter1)
-{
-	int cpu;
-	int i, k;
-
-	stats.ready_to_online[0] = counter0 >= 10;
-	stats.ready_to_online[1] = counter1 >= 10;
-
+/* 
+ * this is just here as a reminder, currently not sure I want to keep this
+ * feature 
+ */
+#if 0
 	if (stats.gpu_busy_quad_mode && 
 			unlikely(gpu_pref_counter >= GPU_BUSY_THRESHOLD))
 	{
@@ -121,34 +117,33 @@ static inline void calc_cpu_hotplug(unsigned int counter0,
 
 		return;
 	}
+#endif
 
-	for (i = 0, k = 2; i < 2; i++, k++)
+static void cpu_revive(unsigned int cpu)
+{
+	cpu_up(cpu);
+	stats.timestamp[cpu - 2] = jiffies;
+}
+
+static void cpu_smash(unsigned int cpu)
+{
+	/*
+	 * Let's not unplug this cpu unless its been online for longer than
+	 * 1sec to avoid consecutive ups and downs if the load is varying
+	 * closer to the threshold point.
+	 */
+	if (jiffies + msecs_to_jiffies(MIN_TIME_CPU_ONLINE_MS)
+		> stats.timestamp[cpu - 2])
 	{
-		if (stats.ready_to_online[i])
-		{
-			if (cpu_is_offline(k))
-			{
-				cpu_up(k);
-				stats.timestamp[i] = ktime_to_ms(ktime_get());
-			}
-		}
-		else if (cpu_online(k))
-		{
-			/*
-			 * Let's not unplug this cpu unless its been online for longer than
-			 * 1sec to avoid consecutive ups and downs if the load is varying
-			 * closer to the threshold point.
-			 */
-			if (ktime_to_ms(ktime_get()) + MIN_TIME_CPU_ONLINE_MS
-					> stats.timestamp[i])
-				cpu_down(k);
-		}
+		cpu_down(cpu);
+		stats.counter[cpu - 2] = 0;
 	}
 }
 
 static void __ref decide_hotplug_func(struct work_struct *work)
 {
     int cpu;
+	unsigned int cur_load;
 	//int i;
 
 	//commented for now
@@ -168,25 +163,31 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 
     for_each_online_cpu(cpu) 
     {
-        if (get_cpu_load(cpu) >= stats.default_first_level)
-        {
-            if (likely(stats.counter[cpu] < HIGH_LOAD_COUNTER))    
-                stats.counter[cpu] += 2;
-        }
+		cur_load = get_cpu_load(cpu);
 
-        else
-        {
-            if (stats.counter[cpu])
-                --stats.counter[cpu];
-        }
+		if (cur_load >= stats.default_first_level)
+		{
+			if (likely(stats.counter[cpu] < HIGH_LOAD_COUNTER))    
+				stats.counter[cpu] += 2;
+
+			if (cpu_is_offline(cpu + 2) && stats.counter[cpu] > 10)
+				cpu_revive(cpu + 2);
+		}
+
+		else
+		{
+			if (stats.counter[cpu])
+				--stats.counter[cpu];
+
+			if (cpu_online(cpu + 2) && stats.counter[cpu] < 10)
+				cpu_smash(cpu + 2);
+		}
 
 		if (cpu)
 			break;
-    }
+	}
 
-	calc_cpu_hotplug(stats.counter[0], stats.counter[1]);
-
-//re_queue:	
+//reschedule:	
     queue_delayed_work(wq, &decide_hotplug, msecs_to_jiffies(TIMER));
 }
 
@@ -194,15 +195,15 @@ static void hotplug_suspend(struct work_struct *work)
 {	 
     int cpu;
 
-    /* First flush the WQ then cancel the hotplug work when the screen is off*/
+    /* First flush the WQ then cancel the hotplug work when the screen is off */
 	flush_workqueue(wq);
     cancel_delayed_work(&decide_hotplug);
 
     pr_info("Suspend stopping Hotplug work...\n");
 
 	/* reset the counters so that we start clean next time the display is on */
-    stats.counter[0] = 0;
-    stats.counter[1] = 0;
+	stats.counter[0] = 0;
+	stats.counter[1] = 0;
 
 	for_each_possible_cpu(cpu)
 	{
@@ -222,7 +223,7 @@ static void __ref hotplug_resume(struct work_struct *work)
 	}
     
     pr_info("Resume starting Hotplug work...\n");
-    queue_delayed_work(wq, &decide_hotplug, HZ);
+    queue_delayed_work(wq, &decide_hotplug, HZ * 2);
 }
 
 static int __ref lcd_notifier_callback(struct notifier_block *this,
@@ -230,6 +231,9 @@ static int __ref lcd_notifier_callback(struct notifier_block *this,
 {
 	switch (event) {
 	case LCD_EVENT_ON_START:
+		if (stats.first_boot)
+			break;
+
 		pr_info("LCD is on.\n");
 		queue_work(screen_on_off_wq, &resume);
 		break;
@@ -238,6 +242,7 @@ static int __ref lcd_notifier_callback(struct notifier_block *this,
 	case LCD_EVENT_OFF_START:
 		pr_info("LCD is off.\n");
 		queue_work(screen_on_off_wq, &suspend);
+		stats.first_boot = false;
 		break;
 	case LCD_EVENT_OFF_END:
 		break;
@@ -312,6 +317,8 @@ int __init mako_hotplug_init(void)
 	INIT_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
+
+	queue_delayed_work(wq, &decide_hotplug, HZ * 20);
     
     return 0;
 }
