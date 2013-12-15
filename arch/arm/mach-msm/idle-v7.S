@@ -59,28 +59,6 @@ skip_pc_debug3:
 msm_pm_boot_vector:
 	.space  4 * NR_CPUS
 
-	.globl target_type
-target_type:
-	.long  0x0
-
-	.globl apps_power_collapse
-apps_power_collapse:
-	.long 0x0
-
-	.globl l2x0_base_addr
-l2x0_base_addr:
-	.long 0x0
-
 	.globl msm_pc_debug_counters_phys
 msm_pc_debug_counters_phys:
 	.long 0x0
-
-/*
- * Save & restore l2x0 registers while system is entering and resuming
- * from Power Collapse.
- * 1. aux_ctrl_save (0x0)
- * 2. data_latency_ctrl (0x4)
- * 3. prefetch control (0x8)
- */
-l2x0_saved_ctrl_reg_val:
-	.space 4 * 3
