@@ -24,6 +24,7 @@
 #include <linux/hotplug.h>
 #include <linux/input.h>
 #include <linux/lcd_notify.h>
+#include <linux/jiffies.h>
 
 #include <mach/cpufreq.h>
 
@@ -34,10 +35,7 @@
 #define TIMER HZ
 #define GPU_BUSY_THRESHOLD 60
 
-/*
- * 1000ms = 1 second
- */
-#define MIN_TIME_CPU_ONLINE_MS 2000
+#define MIN_TIME_CPU_ONLINE HZ
 
 static struct cpu_stats
 {
@@ -45,7 +43,7 @@ static struct cpu_stats
     unsigned int suspend_frequency;
     unsigned int cores_on_touch;
     unsigned int counter[2];
-	u64 timestamp[2];
+	unsigned long timestamp[2];
 	struct notifier_block notif;
 	bool gpu_busy_quad_mode;
 	bool first_boot;
@@ -54,7 +52,6 @@ static struct cpu_stats
     .suspend_frequency = DEFAULT_SUSPEND_FREQ,
     .cores_on_touch = DEFAULT_CORES_ON_TOUCH,
     .counter = {0},
-	.timestamp = {0},
 	.gpu_busy_quad_mode = false,
 	.first_boot = true,
 };
@@ -132,17 +129,17 @@ static void cpu_smash(unsigned int cpu)
 	 * 1sec to avoid consecutive ups and downs if the load is varying
 	 * closer to the threshold point.
 	 */
-	if (jiffies + msecs_to_jiffies(MIN_TIME_CPU_ONLINE_MS)
-		> stats.timestamp[cpu - 2])
-	{
-		cpu_down(cpu);
-		stats.counter[cpu - 2] = 0;
-	}
+	if (time_is_after_jiffies(stats.timestamp[cpu - 2] + MIN_TIME_CPU_ONLINE))
+		return;
+
+	cpu_down(cpu);
+	stats.counter[cpu - 2] = 0;
 }
 
 static void __ref decide_hotplug_func(struct work_struct *work)
 {
     int cpu;
+	int cpu_nr = 2;
 	unsigned int cur_load;
 	//int i;
 
@@ -170,8 +167,8 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 			if (likely(stats.counter[cpu] < HIGH_LOAD_COUNTER))    
 				stats.counter[cpu] += 2;
 
-			if (cpu_is_offline(cpu + 2) && stats.counter[cpu] > 10)
-				cpu_revive(cpu + 2);
+			if (cpu_is_offline(cpu_nr) && stats.counter[cpu] >= 10)
+				cpu_revive(cpu_nr);
 		}
 
 		else
@@ -179,9 +176,11 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 			if (stats.counter[cpu])
 				--stats.counter[cpu];
 
-			if (cpu_online(cpu + 2) && stats.counter[cpu] < 10)
-				cpu_smash(cpu + 2);
+			if (cpu_online(cpu_nr) && stats.counter[cpu] < 10)
+				cpu_smash(cpu_nr);
 		}
+
+		cpu_nr++;
 
 		if (cpu)
 			break;
@@ -313,7 +312,10 @@ int __init mako_hotplug_init(void)
 	stats.notif.notifier_call = lcd_notifier_callback;
 	if (lcd_register_client(&stats.notif))
 		return -EINVAL;
-    
+
+	stats.timestamp[0] = jiffies;
+	stats.timestamp[1] = jiffies;    
+
 	INIT_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
