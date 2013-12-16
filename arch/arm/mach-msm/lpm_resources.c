@@ -119,6 +119,12 @@ enum {
 	MSM_LPM_LOCAL_RS_TYPE = 1,
 };
 
+enum {
+	MSM_SCM_L2_ON = 0,
+	MSM_SCM_L2_OFF = 1,
+	MSM_SCM_L2_GDHS = 3,
+};
+
 struct msm_lpm_resource {
 	struct msm_lpm_rs_data rs_data;
 	uint32_t sleep_value;
