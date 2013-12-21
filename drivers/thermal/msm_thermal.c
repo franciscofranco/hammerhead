@@ -55,13 +55,14 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 {
 	struct cpufreq_policy *policy = data;
 
-	switch (event) {
-	case CPUFREQ_INCOMPATIBLE:
+	if (event != CPUFREQ_ADJUST)
+		return 0;
+
+	if (policy->max != cpu_stats.limited_max_freq)
 		cpufreq_verify_within_limits(policy, policy->min,
-			cpu_stats.limited_max_freq);
-		break;
-	}
-	return NOTIFY_OK;
+				cpu_stats.limited_max_freq);
+
+	return 0;
 }
 
 static struct notifier_block msm_thermal_cpufreq_notifier = {
@@ -149,7 +150,7 @@ int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
 	BUG_ON(pdata->sensor_id >= TSENS_MAX_SENSORS);
 	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
     
-	wq = alloc_workqueue("msm_thermal_workqueue", WQ_FREEZABLE | WQ_UNBOUND, 0);
+	wq = alloc_workqueue("msm_thermal_workqueue", WQ_UNBOUND, 0);
     
     if (!wq)
         return -ENOMEM;
