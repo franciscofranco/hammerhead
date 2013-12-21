@@ -938,7 +938,7 @@ static void __init bus_init(const struct l2_level *l2_level)
 }
 
 #define MAX_VDD 1300
-#define MIN_VDD 700
+#define MIN_VDD 600
 
 ssize_t acpuclk_get_vdd_levels_str(char *buf)
 {
