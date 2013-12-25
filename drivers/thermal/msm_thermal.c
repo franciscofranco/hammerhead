@@ -59,7 +59,7 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 		return 0;
 
 	if (policy->max != cpu_stats.limited_max_freq)
-		cpufreq_verify_within_limits(policy, policy->min,
+		cpufreq_verify_within_limits(policy, 0,
 				cpu_stats.limited_max_freq);
 
 	return 0;
@@ -89,15 +89,6 @@ static void limit_cpu_freqs(uint32_t max_freq)
 	put_online_cpus();
 }
 
-void update_max_freq_buffer(void)
-{
-	if (!cpu_stats.throttling)
-	{
-		cpufreq_get_policy(&cpu_stats.policy, 0);
-		cpu_stats.max_freq = cpu_stats.policy.max;
-	}
-}
-
 static void check_temp(struct work_struct *work)
 {
 	struct tsens_device tsens_dev;
@@ -111,18 +102,13 @@ static void check_temp(struct work_struct *work)
 	{
 		if (unlikely(cpu_stats.throttling))
 		{
-			limit_cpu_freqs(cpu_stats.max_freq);
+			cpufreq_get_policy(&cpu_stats.policy, 0);
+			limit_cpu_freqs(cpu_stats.policy.cpuinfo.max_freq);
 			cpu_stats.throttling = false;
 		}
 
 		goto reschedule;
 	}
-
-	/* 
-	 * Get the max freq before we throttle so that we can re-apply it after
-	 * the device cools down
-	 */
-	update_max_freq_buffer();
 
 	if (temp >= (temp_threshold + 20))
 		limit_cpu_freqs(cpu_stats.thermal_steps[0]);
