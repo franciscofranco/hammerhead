@@ -1167,6 +1167,20 @@ static int rgb_duration_config(struct qpnp_led_data *led)
 
 	if (!on_ms) {
 		return -EINVAL;
+	} else if (!off_ms) {
+		/* implement always on
+		 * note:
+		 * rgb_on_off_ms_store() bumps on_ms=0 up to RGB_LED_MIN_MS
+		 * so setting ms on/off to 0/0 in /sys results in seeing
+		 * 50/0 by the time we get here
+		 */
+		ramp_step_ms = 1000;
+		num_duty_pcts = 1;
+		pwm_cfg->duty_cycles->duty_pcts[0] =
+			(led->cdev.brightness *
+			led->rgb_cfg->calibrated_max *
+			100) /
+			(RGB_MAX_LEVEL * RGB_MAX_LEVEL);
 	} else {
 		ramp_step_ms = on_ms / 20;
 		ramp_step_ms = (ramp_step_ms < 5)? 5 : ramp_step_ms;
@@ -3045,8 +3059,9 @@ static ssize_t rgb_start_store(struct device *dev,
 			if (ret < 0)
 				dev_err(led_array[i].cdev.dev,
 					"RGB set rgb start failed (%d)\n", ret);
+			/* Checking lut flags is used to glean if the led really was started */
 			if (!(led_array[i].rgb_cfg->pwm_cfg->lut_params.flags &
-						PM_PWM_LUT_LOOP))
+						PM_PWM_LUT_RAMP_UP))
 				led_array[i].rgb_cfg->start = 0;
 			break;
 		default:
