@@ -110,7 +110,7 @@ static unsigned int *above_hispeed_delay = default_above_hispeed_delay;
 static int nabove_hispeed_delay = ARRAY_SIZE(default_above_hispeed_delay);
 
 /* 1000ms - 1s */
-#define DEFAULT_BOOSTPULSE_DURATION 250000
+#define DEFAULT_BOOSTPULSE_DURATION 350000
 /* Duration of a boot pulse in usecs */
 static int boostpulse_duration_val = DEFAULT_BOOSTPULSE_DURATION;
 
