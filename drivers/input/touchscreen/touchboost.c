@@ -128,6 +128,11 @@ static const struct input_device_id boost_ids[] = {
 				BIT_MASK(ABS_MT_POSITION_X) |
 				BIT_MASK(ABS_MT_POSITION_Y) },
 	},
+	/* Keypad */
+	{
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+	},
 	{ },
 };
 
