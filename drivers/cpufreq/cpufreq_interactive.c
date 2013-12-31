@@ -129,7 +129,7 @@ static bool io_is_busy = true;
  */
 #define DEFAULT_INPUT_BOOST_FREQ 1574400
 int input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
-extern unsigned long last_input_time;
+extern u64 last_input_time;
 
 #define CPU_SYNC_FREQ 960000
 
