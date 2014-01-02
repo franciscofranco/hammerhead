@@ -118,7 +118,7 @@ static int boostpulse_duration_val = DEFAULT_BOOSTPULSE_DURATION;
  * Max additional time to wait in idle, beyond timer_rate, at speeds above
  * minimum before wakeup to reduce speed, or -1 if unnecessary.
  */
-#define DEFAULT_TIMER_SLACK (4 * DEFAULT_TIMER_RATE)
+#define DEFAULT_TIMER_SLACK (70000)
 static int timer_slack_val = DEFAULT_TIMER_SLACK;
 
 static bool io_is_busy = true;
