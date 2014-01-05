@@ -34,6 +34,7 @@
 #define HIGH_LOAD_COUNTER 20
 #define TIMER HZ
 #define GPU_BUSY_THRESHOLD 60
+#define CPUFREQ_UNPLUG_LIMIT 960000
 
 #define MIN_TIME_CPU_ONLINE HZ
 
@@ -177,7 +178,17 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 				--stats.counter[cpu];
 
 			if (cpu_online(cpu_nr) && stats.counter[cpu] < 10)
-				cpu_smash(cpu_nr);
+			{
+				/* 
+				 * offline the cpu only if its freq is lower than
+				 * CPUFREQ_UNPLUG_LIMIT. Else fill the counter so that this cpu
+				 * stays online at least for an 500ms
+				 */
+				if (cpufreq_get(cpu_nr) >= CPUFREQ_UNPLUG_LIMIT)
+					stats.counter[cpu] = 15;
+				else
+					cpu_smash(cpu_nr);
+			}
 		}
 
 		cpu_nr++;
@@ -234,13 +245,13 @@ static int __ref lcd_notifier_callback(struct notifier_block *this,
 			break;
 
 		pr_info("LCD is on.\n");
-		queue_work(screen_on_off_wq, &resume);
+		queue_work_on(0, screen_on_off_wq, &resume);
 		break;
 	case LCD_EVENT_ON_END:
 		break;
 	case LCD_EVENT_OFF_START:
 		pr_info("LCD is off.\n");
-		queue_work(screen_on_off_wq, &suspend);
+		queue_work_on(0, screen_on_off_wq, &suspend);
 		stats.first_boot = false;
 		break;
 	case LCD_EVENT_OFF_END:
@@ -304,7 +315,7 @@ int __init mako_hotplug_init(void)
     if (!wq)
         return -ENOMEM;
 
-	screen_on_off_wq = alloc_workqueue("screen_on_off_workqueue", 0, 0);
+	screen_on_off_wq = alloc_workqueue("screen_on_off_workqueue", WQ_HIGHPRI, 0);
     
     if (!screen_on_off_wq)
         return -ENOMEM;
