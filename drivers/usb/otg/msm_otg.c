@@ -48,8 +48,6 @@
 #include <mach/msm_bus.h>
 #include <mach/rpm-regulator.h>
 
-#include <linux/fastchg.h>
-
 #define MSM_USB_BASE	(motg->regs)
 #define DRIVER_NAME	"msm_otg"
 
@@ -1332,9 +1330,6 @@ static void msm_otg_notify_charger(struct msm_otg *motg, unsigned mA)
 
 	if (motg->cur_power == mA)
 		return;
-
-	if (force_fast_charge)
-		mA = USB_FASTCHG_LOAD;
 
 	dev_info(motg->phy.dev, "Avail curr from USB = %u\n", mA);
 
