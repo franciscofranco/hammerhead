@@ -67,6 +67,7 @@ static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 static struct workqueue_struct *wq;
 static struct workqueue_struct *screen_on_off_wq;
 static struct delayed_work decide_hotplug;
+static struct delayed_work decide_hotplug_screen_off;
 static struct work_struct suspend;
 static struct work_struct resume;
 
@@ -201,6 +202,36 @@ static void __ref decide_hotplug_func(struct work_struct *work)
     queue_delayed_work(wq, &decide_hotplug, msecs_to_jiffies(TIMER));
 }
 
+static void __ref decide_hotplug_screen_off_func(struct work_struct *work)
+{
+	unsigned int cur_load;
+
+	cur_load = get_cpu_load(0);
+
+	if (cur_load >= stats.default_first_level)
+	{
+		if (likely(stats.counter[0] < HIGH_LOAD_COUNTER))    
+			stats.counter[0] += 2;
+
+		if (cpu_is_offline(1) && stats.counter[0] >= 10)
+			cpu_up(1);
+	}
+
+	else
+	{
+		if (stats.counter[0])
+			--stats.counter[0];
+
+		if (cpu_online(1) && stats.counter[0] < 10)
+		{
+			cpu_down(1);
+			stats.counter[0] = 0;
+		}
+	}
+
+	queue_delayed_work(wq, &decide_hotplug_screen_off, msecs_to_jiffies(HZ));
+}
+
 static void hotplug_suspend(struct work_struct *work)
 {	 
     int cpu;
@@ -220,11 +251,17 @@ static void hotplug_suspend(struct work_struct *work)
 		if (cpu_online(cpu) && cpu)
 			cpu_down(cpu);
 	}
+
+	queue_delayed_work(wq, &decide_hotplug_screen_off, msecs_to_jiffies(HZ));
 }
 
 static void __ref hotplug_resume(struct work_struct *work)
 {  
     int cpu;
+
+	/* First flush the WQ then cancel the hotplug work when the screen is off */
+	flush_workqueue(wq);
+    cancel_delayed_work(&decide_hotplug_screen_off);
 
 	for_each_possible_cpu(cpu)
 	{
@@ -310,7 +347,7 @@ int __init mako_hotplug_init(void)
 {
 	pr_info("Mako Hotplug driver started.\n");
 
-    wq = alloc_ordered_workqueue("mako_hotplug_workqueue", 0);
+    wq = alloc_ordered_workqueue("mako_hotplug_workqueue", WQ_FREEZABLE);
     
     if (!wq)
         return -ENOMEM;
@@ -330,6 +367,7 @@ int __init mako_hotplug_init(void)
 	INIT_WORK(&suspend, hotplug_suspend);
 	INIT_WORK(&resume, hotplug_resume);
     INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
+	INIT_DELAYED_WORK(&decide_hotplug_screen_off, decide_hotplug_screen_off_func);
 
 	queue_delayed_work(wq, &decide_hotplug, HZ * 20);
     
