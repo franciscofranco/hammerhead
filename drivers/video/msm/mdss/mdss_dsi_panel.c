@@ -46,6 +46,8 @@ static struct mdss_dsi_phy_ctrl phy_params;
 static struct mdss_panel_common_pdata *local_pdata;
 static struct work_struct send_cmds_work;
 struct mdss_panel_data *cmds_panel_data;
+static struct platform_driver this_driver;
+struct kobject *module_kobj;
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -1248,7 +1250,7 @@ static struct attribute *dsi_panel_attributes[] = {
 };
 
 static struct attribute_group dsi_panel_attribute_group = {
-	.attrs = dsi_panel_attributes
+	.attrs = dsi_panel_attributes,
 };
 
 /**************************** sysfs end **************************/
@@ -1258,6 +1260,7 @@ static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 	int rc = 0;
 	static struct mdss_panel_common_pdata vendor_pdata;
 	static const char *panel_name;
+	const char *driver_name = this_driver.driver.name;
 
 	pr_debug("%s:%d, debug info id=%d", __func__, __LINE__, pdev->id);
 	if (!pdev->dev.of_node)
@@ -1292,7 +1295,13 @@ static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 	debug_fs_init(&vendor_pdata);
 #endif
 
-	rc = sysfs_create_group(&pdev->dev.kobj, &dsi_panel_attribute_group);
+	module_kobj = kobject_create_and_add(driver_name, &module_kset->kobj);
+	if (!module_kobj) {
+		pr_err("%s: kobject create failed\n", driver_name);
+		return -ENOMEM;
+	}
+
+	rc = sysfs_create_group(module_kobj, &dsi_panel_attribute_group);
 	if (rc)
 		pr_err("%s: sysfs create failed: %d\n", panel_name, rc);
 
