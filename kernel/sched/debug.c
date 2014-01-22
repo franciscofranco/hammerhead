@@ -303,6 +303,7 @@ static void print_cpu(struct seq_file *m, int cpu)
 #define P64(n) SEQ_printf(m, "  .%-30s: %Ld\n", #n, rq->n);
 
 	P(yld_count);
+	P(yield_sleep_count);
 
 	P(sched_count);
 	P(sched_goidle);
