@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -288,37 +288,27 @@ static struct device_type slim_dev_type = {
 
 static void slim_report(struct work_struct *work)
 {
-	u8 laddr;
-	int ret, i;
 	struct slim_driver *sbdrv;
 	struct slim_device *sbdev =
 			container_of(work, struct slim_device, wd);
-	struct slim_controller *ctrl = sbdev->ctrl;
 	if (!sbdev->dev.driver)
 		return;
 	/* check if device-up or down needs to be called */
-	mutex_lock(&ctrl->m_ctrl);
-	/* address no longer valid, means device reported absent */
-	for (i = 0; i < ctrl->num_dev; i++) {
-		if (sbdev->laddr == ctrl->addrt[i].laddr &&
-			ctrl->addrt[i].valid == false &&
-			sbdev->notified)
-			break;
-	}
-	mutex_unlock(&ctrl->m_ctrl);
+	if ((!sbdev->reported && !sbdev->notified) ||
+			(sbdev->reported && sbdev->notified))
+		return;
+
 	sbdrv = to_slim_driver(sbdev->dev.driver);
-	if (i < ctrl->num_dev) {
+	/*
+	 * address no longer valid, means device reported absent, whereas
+	 * address valid, means device reported present
+	 */
+	if (sbdev->notified && !sbdev->reported) {
 		sbdev->notified = false;
 		if (sbdrv->device_down)
 			sbdrv->device_down(sbdev);
-		return;
-	}
-	if (sbdev->notified)
-		return;
-	ret = slim_get_logical_addr(sbdev, sbdev->e_addr, 6, &laddr);
-	if (!ret) {
-		if (sbdrv)
-			sbdev->notified = true;
+	} else if (!sbdev->notified && sbdev->reported) {
+		sbdev->notified = true;
 		if (sbdrv->device_up)
 			sbdrv->device_up(sbdev);
 	}
@@ -645,9 +635,40 @@ void slim_report_absent(struct slim_device *sbdev)
 			ctrl->addrt[i].valid = false;
 	}
 	mutex_unlock(&ctrl->m_ctrl);
+	sbdev->reported = false;
 	queue_work(ctrl->wq, &sbdev->wd);
 }
 EXPORT_SYMBOL(slim_report_absent);
+
+/*
+ * slim_framer_booted: This function is called by controller after the active
+ * framer has booted (using Bus Reset sequence, or after it has shutdown and has
+ * come back up). Components, devices on the bus may be in undefined state,
+ * and this function triggers their drivers to do the needful
+ * to bring them back in Reset state so that they can acquire sync, report
+ * present and be operational again.
+ */
+void slim_framer_booted(struct slim_controller *ctrl)
+{
+	struct slim_device *sbdev;
+	struct list_head *pos, *next;
+	if (!ctrl)
+		return;
+	mutex_lock(&ctrl->m_ctrl);
+	list_for_each_safe(pos, next, &ctrl->devs) {
+		struct slim_driver *sbdrv;
+		sbdev = list_entry(pos, struct slim_device, dev_list);
+		mutex_unlock(&ctrl->m_ctrl);
+		if (sbdev && sbdev->dev.driver) {
+			sbdrv = to_slim_driver(sbdev->dev.driver);
+			if (sbdrv->reset_device)
+				sbdrv->reset_device(sbdev);
+		}
+		mutex_lock(&ctrl->m_ctrl);
+	}
+	mutex_unlock(&ctrl->m_ctrl);
+}
+EXPORT_SYMBOL(slim_framer_booted);
 
 /*
  * slim_msg_response: Deliver Message response received from a device to the
@@ -668,9 +689,12 @@ void slim_msg_response(struct slim_controller *ctrl, u8 *reply, u8 tid, u8 len)
 
 	mutex_lock(&ctrl->m_ctrl);
 	txn = ctrl->txnt[tid];
-	if (txn == NULL) {
-		dev_err(&ctrl->dev, "Got response to invalid TID:%d, len:%d",
+	if (txn == NULL || txn->rbuf == NULL) {
+		if (txn == NULL)
+			dev_err(&ctrl->dev, "Got response to invalid TID:%d, len:%d",
 				tid, len);
+		else
+			dev_err(&ctrl->dev, "Invalid client buffer passed\n");
 		mutex_unlock(&ctrl->m_ctrl);
 		return;
 	}
@@ -773,6 +797,8 @@ int slim_assign_laddr(struct slim_controller *ctrl, const u8 *e_addr,
 	u8 i = 0;
 	bool exists = false;
 	struct slim_device *sbdev;
+	struct list_head *pos, *next;
+
 	mutex_lock(&ctrl->m_ctrl);
 	/* already assigned */
 	if (ctrl_getlogical_addr(ctrl, e_addr, e_len, &i) == 0) {
@@ -822,10 +848,12 @@ ret_assigned_laddr:
 	pr_info("slimbus:%d laddr:0x%x, EAPC:0x%x:0x%x", ctrl->nr, *laddr,
 				e_addr[1], e_addr[2]);
 	mutex_lock(&ctrl->m_ctrl);
-	list_for_each_entry(sbdev, &ctrl->devs, dev_list) {
+	list_for_each_safe(pos, next, &ctrl->devs) {
+		sbdev = list_entry(pos, struct slim_device, dev_list);
 		if (memcmp(sbdev->e_addr, e_addr, 6) == 0) {
 			struct slim_driver *sbdrv;
 			sbdev->laddr = *laddr;
+			sbdev->reported = true;
 			if (sbdev->dev.driver) {
 				sbdrv = to_slim_driver(sbdev->dev.driver);
 				if (sbdrv->device_up)
@@ -1079,6 +1107,28 @@ xfer_err:
 EXPORT_SYMBOL_GPL(slim_xfer_msg);
 
 /*
+ * User message:
+ * slim_user_msg: Send user message that is interpreted by destination device
+ * @sb: Client handle sending the message
+ * @la: Destination device for this user message
+ * @mt: Message Type (Soruce-referred, or Destination-referred)
+ * @mc: Message Code
+ * @msg: Message structure (start offset, number of bytes) to be sent
+ * @buf: data buffer to be sent
+ * @len: data buffer size in bytes
+ */
+int slim_user_msg(struct slim_device *sb, u8 la, u8 mt, u8 mc,
+				struct slim_ele_access *msg, u8 *buf, u8 len)
+{
+	if (!sb || !sb->ctrl || !msg || mt == SLIM_MSG_MT_CORE)
+		return -EINVAL;
+	if (!sb->ctrl->xfer_user_msg)
+		return -EPROTONOSUPPORT;
+	return sb->ctrl->xfer_user_msg(sb->ctrl, la, mt, mc, msg, buf, len);
+}
+EXPORT_SYMBOL(slim_user_msg);
+
+/*
  * slim_alloc_mgrports: Allocate port on manager side.
  * @sb: device/client handle.
  * @req: Port request type.
@@ -1135,8 +1185,11 @@ int slim_alloc_mgrports(struct slim_device *sb, enum slim_port_req req,
 		}
 		break;
 	}
-	if (i >= ctrl->nports)
+	if (i >= ctrl->nports) {
 		ret = -EDQUOT;
+		goto alloc_err;
+	}
+	ret = 0;
 	for (j = i; j < i + nphysp; j++) {
 		ctrl->ports[j].state = SLIM_P_UNCFG;
 		ctrl->ports[j].req = req;
@@ -1144,7 +1197,8 @@ int slim_alloc_mgrports(struct slim_device *sb, enum slim_port_req req,
 			ctrl->ports[j].flow = SLIM_SINK;
 		else
 			ctrl->ports[j].flow = SLIM_SRC;
-		ret = ctrl->config_port(ctrl, j);
+		if (ctrl->alloc_port)
+			ret = ctrl->alloc_port(ctrl, j);
 		if (ret) {
 			for (; j >= i; j--)
 				ctrl->ports[j].state = SLIM_P_FREE;
@@ -1172,17 +1226,26 @@ int slim_dealloc_mgrports(struct slim_device *sb, u32 *hdl, int nports)
 	for (i = 0; i < nports; i++) {
 		u8 pn;
 		pn = SLIM_HDL_TO_PORT(hdl[i]);
-		if (ctrl->ports[pn].state == SLIM_P_CFG) {
-			int j;
-			dev_err(&ctrl->dev, "Can't dealloc connected port:%d",
-					i);
+
+		if (pn >= ctrl->nports || ctrl->ports[pn].state == SLIM_P_CFG) {
+			int j, ret;
+			if (pn >= ctrl->nports) {
+				dev_err(&ctrl->dev, "invalid port number");
+				ret = -EINVAL;
+			} else {
+				dev_err(&ctrl->dev,
+					"Can't dealloc connected port:%d", i);
+				ret = -EISCONN;
+			}
 			for (j = i - 1; j >= 0; j--) {
 				pn = SLIM_HDL_TO_PORT(hdl[j]);
 				ctrl->ports[pn].state = SLIM_P_UNCFG;
 			}
 			mutex_unlock(&ctrl->m_ctrl);
-			return -EISCONN;
+			return ret;
 		}
+		if (ctrl->dealloc_port)
+			ctrl->dealloc_port(ctrl, pn);
 		ctrl->ports[pn].state = SLIM_P_FREE;
 	}
 	mutex_unlock(&ctrl->m_ctrl);
@@ -1261,6 +1324,8 @@ static int disconnect_port_ch(struct slim_controller *ctrl, u32 ph)
  * Channel specified in chanh needs to be allocated first.
  * Returns -EALREADY if source is already configured for this channel.
  * Returns -ENOTCONN if channel is not allocated
+ * Returns -EINVAL if invalid direction is specified for non-manager port,
+ * or if the manager side port number is out of bounds, or in incorrect state
  */
 int slim_connect_src(struct slim_device *sb, u32 srch, u16 chanh)
 {
@@ -1269,11 +1334,22 @@ int slim_connect_src(struct slim_device *sb, u32 srch, u16 chanh)
 	u8 chan = SLIM_HDL_TO_CHIDX(chanh);
 	struct slim_ich *slc = &ctrl->chans[chan];
 	enum slim_port_flow flow = SLIM_HDL_TO_FLOW(srch);
+	u8 la = SLIM_HDL_TO_LA(srch);
 
-	if (flow != SLIM_SRC)
+	/* manager ports don't have direction when they are allocated */
+	if (la != SLIM_LA_MANAGER && flow != SLIM_SRC)
 		return -EINVAL;
 
 	mutex_lock(&ctrl->sched.m_reconf);
+
+	if (la == SLIM_LA_MANAGER) {
+		u8 pn = SLIM_HDL_TO_PORT(srch);
+		if (pn >= ctrl->nports ||
+			ctrl->ports[pn].state != SLIM_P_UNCFG) {
+			ret = -EINVAL;
+			goto connect_src_err;
+		}
+	}
 
 	if (slc->state == SLIM_CH_FREE) {
 		ret = -ENOTCONN;
@@ -1310,6 +1386,9 @@ EXPORT_SYMBOL_GPL(slim_connect_src);
  * Channel specified in chanh needs to be allocated first.
  * Returns -EALREADY if sink is already configured for this channel.
  * Returns -ENOTCONN if channel is not allocated
+ * Returns -EINVAL if invalid parameters are passed, or invalid direction is
+ * specified for non-manager port, or if the manager side port number is out of
+ * bounds, or in incorrect state
  */
 int slim_connect_sink(struct slim_device *sb, u32 *sinkh, int nsink, u16 chanh)
 {
@@ -1336,8 +1415,14 @@ int slim_connect_sink(struct slim_device *sb, u32 *sinkh, int nsink, u16 chanh)
 
 	for (j = 0; j < nsink; j++) {
 		enum slim_port_flow flow = SLIM_HDL_TO_FLOW(sinkh[j]);
-		if (flow != SLIM_SINK)
+		u8 la = SLIM_HDL_TO_LA(sinkh[j]);
+		u8 pn = SLIM_HDL_TO_PORT(sinkh[j]);
+		if (la != SLIM_LA_MANAGER && flow != SLIM_SINK)
 			ret = -EINVAL;
+		else if (la == SLIM_LA_MANAGER &&
+				(pn >= ctrl->nports ||
+				ctrl->ports[pn].state != SLIM_P_UNCFG))
+				ret = -EINVAL;
 		else
 			ret = connect_port_ch(ctrl, chan, sinkh[j], SLIM_SINK);
 		if (ret) {
@@ -1399,7 +1484,7 @@ EXPORT_SYMBOL_GPL(slim_disconnect_ports);
  * Client will call slim_port_get_xfer_status to get error and/or number of
  * bytes transferred if used asynchronously.
  */
-int slim_port_xfer(struct slim_device *sb, u32 ph, u8 *iobuf, u32 len,
+int slim_port_xfer(struct slim_device *sb, u32 ph, phys_addr_t iobuf, u32 len,
 				struct completion *comp)
 {
 	struct slim_controller *ctrl = sb->ctrl;
@@ -1429,7 +1514,7 @@ EXPORT_SYMBOL_GPL(slim_port_xfer);
  * processed from the multiple transfers.
  */
 enum slim_port_err slim_port_get_xfer_status(struct slim_device *sb, u32 ph,
-			u8 **done_buf, u32 *done_len)
+			phys_addr_t *done_buf, u32 *done_len)
 {
 	struct slim_controller *ctrl = sb->ctrl;
 	u8 pn = SLIM_HDL_TO_PORT(ph);
@@ -1442,7 +1527,7 @@ enum slim_port_err slim_port_get_xfer_status(struct slim_device *sb, u32 ph,
 	 */
 	if (la != SLIM_LA_MANAGER) {
 		if (done_buf)
-			*done_buf = NULL;
+			*done_buf = 0;
 		if (done_len)
 			*done_len = 0;
 		return SLIM_P_NOT_OWNED;
@@ -1490,7 +1575,8 @@ static void slim_add_ch(struct slim_controller *ctrl, struct slim_ich *slc)
 	for (j = *len - 1; j > i; j--)
 		arr[j] = arr[j - 1];
 	arr[i] = slc;
-	ctrl->sched.usedslots += sl;
+	if (!ctrl->allocbw)
+		ctrl->sched.usedslots += sl;
 
 	return;
 }
@@ -2596,7 +2682,8 @@ static void slim_chan_changes(struct slim_device *sb, bool revert)
 				u32 sl = slc->seglen << slc->rootexp;
 				if (slc->coeff == SLIM_COEFF_3)
 					sl *= 3;
-				ctrl->sched.usedslots -= sl;
+				if (!ctrl->allocbw)
+					ctrl->sched.usedslots -= sl;
 				slim_remove_ch(ctrl, slc);
 				slc->state = SLIM_CH_DEFINED;
 			}
@@ -2617,7 +2704,8 @@ static void slim_chan_changes(struct slim_device *sb, bool revert)
 		if (revert || slc->def > 0) {
 			if (slc->coeff == SLIM_COEFF_3)
 				sl *= 3;
-			ctrl->sched.usedslots += sl;
+			if (!ctrl->allocbw)
+				ctrl->sched.usedslots += sl;
 			if (revert)
 				slc->def++;
 			slc->state = SLIM_CH_ACTIVE;
@@ -2711,7 +2799,8 @@ int slim_reconfigure_now(struct slim_device *sb)
 		u32 sl = slc->seglen << slc->rootexp;
 		if (slc->coeff == SLIM_COEFF_3)
 			sl *= 3;
-		ctrl->sched.usedslots -= sl;
+		if (!ctrl->allocbw)
+			ctrl->sched.usedslots -= sl;
 		slc->state = SLIM_CH_PENDING_REMOVAL;
 	}
 	list_for_each_entry(pch, &sb->mark_suspend, pending) {
@@ -2973,7 +3062,7 @@ int slim_control_ch(struct slim_device *sb, u16 chanh,
 					pch = list_entry(pos,
 						struct slim_pending_ch,
 						pending);
-					if (pch->chan == slc->chan) {
+					if (pch->chan == chan) {
 						list_del(&pch->pending);
 						kfree(pch);
 						add_mark_removal = false;
@@ -3066,8 +3155,15 @@ int slim_ctrl_clk_pause(struct slim_controller *ctrl, bool wakeup, u8 restart)
 		 */
 		if (ctrl->clk_state == SLIM_CLK_PAUSED && ctrl->wakeup)
 			ret = ctrl->wakeup(ctrl);
+		/*
+		 * If wakeup fails, make sure that next attempt can succeed.
+		 * Since we already consumed pause_comp, complete it so
+		 * that next wakeup isn't blocked forever
+		 */
 		if (!ret)
 			ctrl->clk_state = SLIM_CLK_ACTIVE;
+		else
+			complete(&ctrl->pause_comp);
 		mutex_unlock(&ctrl->m_ctrl);
 		return ret;
 	} else {
