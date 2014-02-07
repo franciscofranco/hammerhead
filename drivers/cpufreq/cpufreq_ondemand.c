@@ -104,7 +104,6 @@ struct cpu_dbs_info_s {
 	 */
 	struct mutex timer_mutex;
 
-	wait_queue_head_t sync_wq;
 	atomic_t src_sync_cpu;
 	atomic_t sync_enabled;
 };
@@ -1020,7 +1019,6 @@ static int dbs_migration_notify(struct notifier_block *nb,
 		&per_cpu(od_cpu_dbs_info, target_cpu);
 
 	atomic_set(&target_dbs_info->src_sync_cpu, (int)arg);
-	wake_up(&target_dbs_info->sync_wq);
 
 	return NOTIFY_OK;
 }
@@ -1288,7 +1286,6 @@ static int __init cpufreq_gov_dbs_init(void)
 		mutex_init(&this_dbs_info->timer_mutex);
 
 		atomic_set(&this_dbs_info->src_sync_cpu, -1);
-		init_waitqueue_head(&this_dbs_info->sync_wq);
 	}
 
 	rc = smpboot_register_percpu_thread(&dbs_sync_threads);
