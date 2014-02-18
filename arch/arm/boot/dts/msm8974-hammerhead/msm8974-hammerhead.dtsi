@@ -93,6 +93,8 @@
 
 		qcom,hdmi-audio-rx;
 
+		qcom,us-euro-gpios = <&pm8941_gpios 20 0>;
+
 		qcom,audio-routing =
 			"RX_BIAS", "MCLK",
 			"LDO_H", "MCLK",
