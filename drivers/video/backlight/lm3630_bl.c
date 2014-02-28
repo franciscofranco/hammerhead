@@ -217,6 +217,9 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 {
 	struct lm3630_device *dev = i2c_get_clientdata(client);
 
+	int max_current;
+	int brightness;
+
 	mutex_lock(&backlight_mtx);
 	dev->bl_dev->props.brightness = level;
 
@@ -228,28 +231,23 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 			lm3630_set_max_current_reg(dev, 0);
 			lm3630_set_brightness_reg(dev, 1);
 		} else {
-			if (level < dev->min_brightness) {
-				level = dev->min_brightness;
-			} else if (level > dev->max_brightness) {
-				level = dev->max_brightness;
-                	}
-
-               		lm3630_set_max_current_reg(dev, dev->max_current);
-
-	                if (dev->blmap) {
-        	                if (level < dev->blmap_size) {
-        	                        lm3630_set_brightness_reg(dev,
-        	                                        dev->blmap[level]);
-        	                } else {
-        	                        pr_err("%s: invalid index %d:%d\n",
-        	                                        __func__,
-        	                                        dev->blmap_size,
-        	                                        level);
-        	                }
-        	        } else {
-        	                lm3630_set_brightness_reg(dev, level);
-        	        }
-        	}
+			if (level > 255) level = 255;
+			else if (level < 2) level = 2;
+	
+			if (level < 15) {
+				max_current = 0;
+				brightness = level - 1;
+			} else if (level < 89) {
+				max_current = 18;
+				brightness = 5 + ((level - 15) * 250 / 235);
+			} else {
+				max_current = 18;
+				brightness = level;
+			}
+	
+			lm3630_set_max_current_reg(dev, max_current);
+			lm3630_set_brightness_reg(dev, brightness);
+		}
 
 	} else {
 
