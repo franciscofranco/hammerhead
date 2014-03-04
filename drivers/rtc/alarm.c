@@ -504,8 +504,11 @@ static void alarm_shutdown(struct platform_device *dev)
 
 	spin_lock_irqsave(&alarm_slock, flags);
 
-	if (!power_on_alarm)
+	if (!power_on_alarm) {
+		spin_unlock_irqrestore(&alarm_slock, flags);
 		goto disable_alarm;
+	}
+	spin_unlock_irqrestore(&alarm_slock, flags);
 
 	rtc_read_time(alarm_rtc_dev, &rtc_time);
 	getnstimeofday(&wall_time);
@@ -524,7 +527,6 @@ static void alarm_shutdown(struct platform_device *dev)
 		pr_alarm(FLOW, "Power-on alarm set to %lu\n",
 				alarm_time);
 
-	spin_unlock_irqrestore(&alarm_slock, flags);
 	return;
 
 disable_alarm:
