@@ -71,7 +71,7 @@
 
 #define BL_OFF 0x00
 
-bool backlight_dimmer = false;
+bool backlight_dimmer = true;
 module_param(backlight_dimmer, bool, 0755);
 
 enum {
