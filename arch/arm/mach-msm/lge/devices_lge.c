@@ -218,3 +218,30 @@ hw_rev_type lge_get_board_revno(void)
 {
     return lge_bd_rev;
 }
+
+#if defined(CONFIG_LCD_KCAL)
+int g_kcal_r = 255;
+int g_kcal_g = 255;
+int g_kcal_b = 255;
+
+extern int kcal_set_values(int kcal_r, int kcal_g, int kcal_b);
+static int __init display_kcal_setup(char *kcal)
+{
+	char vaild_k = 0;
+	int kcal_r = 255;
+	int kcal_g = 255;
+	int kcal_b = 255;
+
+	sscanf(kcal, "%d|%d|%d|%c", &kcal_r, &kcal_g, &kcal_b, &vaild_k );
+	pr_info("kcal is %d|%d|%d|%c\n", kcal_r, kcal_g, kcal_b, vaild_k);
+
+	if (vaild_k != 'K') {
+		pr_info("kcal not calibrated yet : %d\n", vaild_k);
+		kcal_r = kcal_g = kcal_b = 255;
+	}
+
+	kcal_set_values(kcal_r, kcal_g, kcal_b);
+	return 1;
+}
+__setup("lge.kcal=", display_kcal_setup);
+#endif
