@@ -224,19 +224,25 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 	dev->bl_dev->props.brightness = level;
 
 	if (backlight_dimmer) {
-
-		if (level == 0) {
+		/*
+		 * Little code optimisation here because 99% of the time level won't be
+		 * 0 so make the compiler optimise this code path, just because we can
+		 */
+		if (unlikely(!level)) {
 			lm3630_write_reg(client, CONTROL_REG, BL_OFF);
-		} else if (level == 1) {
-			lm3630_set_max_current_reg(dev, 0);
-			lm3630_set_brightness_reg(dev, 1);
 		} else {
-			if (level > 255) level = 255;
-			else if (level < 2) level = 2;
+			if (level > dev->max_brightness) 
+				level = dev->max_brightness;
+			else if (level < dev->min_brightness) 
+				level = dev->min_brightness;
 	
 			if (level < 15) {
 				max_current = 0;
 				brightness = level - 1;
+				
+				if (brightness < dev->min_brightness) {
+					brightness = dev->min_brightness;
+				}
 			} else if (level < 89) {
 				max_current = 18;
 				brightness = 5 + ((level - 15) * 250 / 235);
@@ -248,9 +254,7 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 			lm3630_set_max_current_reg(dev, max_current);
 			lm3630_set_brightness_reg(dev, brightness);
 		}
-
 	} else {
-
 		if (level != 0) {
 			if (level < dev->min_brightness)
 				level = dev->min_brightness;
@@ -269,7 +273,6 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 		} else {
 			lm3630_write_reg(client, CONTROL_REG, BL_OFF);
 		}
-
 	}
 
 	mutex_unlock(&backlight_mtx);
