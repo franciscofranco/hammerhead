@@ -229,7 +229,8 @@ static int idletimer_resume(struct notifier_block *notifier,
 		return NOTIFY_DONE;
 	switch (pm_event) {
 	case PM_SUSPEND_PREPARE:
-		get_monotonic_boottime(&timer->last_suspend_time);
+		if (timer)
+			get_monotonic_boottime(&timer->last_suspend_time);
 		break;
 	case PM_POST_SUSPEND:
 		spin_lock_bh(&timestamp_lock);
