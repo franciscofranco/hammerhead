@@ -157,10 +157,26 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 	int cpu_nr = 2;
 	unsigned int cur_load;
 	unsigned int freq_buf;
+	unsigned int nr_online_cpus = num_online_cpus();
 	struct cpufreq_policy policy;
 	struct hotplug_tunables *t = &tunables;
 
-	if (unlikely(num_online_cpus() == 1))
+	/*
+	 * reschedule early when the system is during FREEZER phase
+	 */
+	if (unlikely(nr_online_cpus == 1))
+		goto reschedule;
+
+	/*
+	 * reschedule early when the user doesn't want more than 2 cores online
+	 */
+	if (unlikely(t->load_threshold == 100 && nr_online_cpus == 2))
+		goto reschedule;
+
+	/*
+	 * reschedule early when users to run with all cores online
+	 */
+	if (unlikely(!t->load_threshold && nr_online_cpus == num_possible_cpus()))
 		goto reschedule;
 
     for_each_online_cpu(cpu) 
