@@ -220,10 +220,6 @@ hw_rev_type lge_get_board_revno(void)
 }
 
 #if defined(CONFIG_LCD_KCAL)
-int g_kcal_r = 255;
-int g_kcal_g = 255;
-int g_kcal_b = 255;
-
 extern int kcal_set_values(int kcal_r, int kcal_g, int kcal_b);
 static int __init display_kcal_setup(char *kcal)
 {
