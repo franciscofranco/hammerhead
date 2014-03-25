@@ -57,9 +57,6 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 
 	if (event != CPUFREQ_ADJUST)
 		return 0;
-
-	if (policy->max == cpu_stats.limited_max_freq)
-		return 0;
 		
 	cpufreq_verify_within_limits(policy, cpu_stats.policy.cpuinfo.min_freq,
 		cpu_stats.limited_max_freq);
