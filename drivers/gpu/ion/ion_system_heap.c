@@ -2,7 +2,7 @@
  * drivers/gpu/ion/ion_system_heap.c
  *
  * Copyright (C) 2011 Google, Inc.
- * Copyright (c) 2011-2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -356,7 +356,7 @@ struct ion_heap *ion_system_heap_create(struct ion_platform_heap *unused)
 		struct ion_page_pool *pool;
 		gfp_t gfp_flags = low_order_gfp_flags;
 
-		if (orders[i])
+		if (orders[i] > 4)
 			gfp_flags = high_order_gfp_flags;
 		pool = ion_page_pool_create(gfp_flags, orders[i], false);
 		if (!pool)
