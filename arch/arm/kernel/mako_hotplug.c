@@ -40,6 +40,8 @@
 #define DEFAULT_MIN_TIME_CPU_ONLINE 1
 #define DEFAULT_TIMER 1
 
+extern bool boosted;
+
 static struct cpu_stats
 {
 	unsigned int counter[2];
@@ -213,7 +215,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 				if (policy.min > t->cpufreq_unplug_limit)
 					freq_buf = t->cpufreq_unplug_limit;
 
-				if (policy.cur > freq_buf)
+				if (policy.cur > freq_buf && !boosted)
 					stats.counter[cpu] = t->high_load_counter + 5;
 				else
 					cpu_smash(cpu_nr);
