@@ -596,9 +596,8 @@ int sched_proc_update_handler(struct ctl_table *table, int write,
 static inline unsigned long
 calc_delta_fair(unsigned long delta, struct sched_entity *se)
 {
-	if (unlikely(se->load.weight != NICE_0_LOAD))
-		delta = calc_delta_mine(delta, NICE_0_LOAD, &se->load);
-
+	/* nice? why bother, MAX delta here! */
+	delta = LONG_MAX;
 	return delta;
 }
 
@@ -616,7 +615,8 @@ static u64 __sched_period(unsigned long nr_running)
 	unsigned long nr_latency = sched_nr_latency;
 
 	if (unlikely(nr_running > nr_latency)) {
-		period = sysctl_sched_min_granularity;
+		/* let's give real granularity here */
+		period = 5000000ULL;
 		period *= nr_running;
 	}
 
