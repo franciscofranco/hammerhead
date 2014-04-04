@@ -391,7 +391,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	pcpu->prev_load = cpu_load;
 	boosted = now < (last_input_time + boostpulse_duration_val);
 
-	if (cpu_load >= go_hispeed_load) {
+	if (cpu_load >= go_hispeed_load || pcpu->limits_changed) {
 		if (pcpu->target_freq < hispeed_freq) {
 			new_freq = hispeed_freq;
 		} else {
