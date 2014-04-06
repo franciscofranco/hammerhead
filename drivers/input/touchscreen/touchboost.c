@@ -200,7 +200,7 @@ static int boost_migration_notify(struct notifier_block *nb,
 		return NOTIFY_OK;
 
 	if (load_based_syncs && ((mnd->load < 0) || (mnd->load > 100))) {
-		pr_err("cpu-boost:Invalid load: %d\n", mnd->load);
+		pr_debug("cpu-boost:Invalid load: %d\n", mnd->load);
 		return NOTIFY_OK;
 	}
 
