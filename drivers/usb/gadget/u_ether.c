@@ -566,6 +566,7 @@ static void tx_complete(struct usb_ep *ep, struct usb_request *req)
 				}
 
 				new_req->length = length;
+				new_req->complete = tx_complete;
 				retval = usb_ep_queue(in, new_req, GFP_ATOMIC);
 				switch (retval) {
 				default:
@@ -639,6 +640,7 @@ free_buf:
 	list_for_each(act, &dev->tx_reqs) {
 		req = container_of(act, struct usb_request, list);
 		kfree(req->buf);
+		req->buf = NULL;
 	}
 	return -ENOMEM;
 }
@@ -1222,8 +1224,10 @@ void gether_disconnect(struct gether *link)
 		list_del(&req->list);
 
 		spin_unlock(&dev->req_lock);
-		if (link->multi_pkt_xfer)
+		if (link->multi_pkt_xfer) {
 			kfree(req->buf);
+			req->buf = NULL;
+		}
 		usb_ep_free_request(link->in_ep, req);
 		spin_lock(&dev->req_lock);
 	}

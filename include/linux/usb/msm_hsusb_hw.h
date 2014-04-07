@@ -39,6 +39,19 @@
 #define USB_USBINTR          (MSM_USB_BASE + 0x0148)
 #define USB_FRINDEX          (MSM_USB_BASE + 0x014C)
 
+#define USB_L1_EP_CTRL	     (MSM_USB_BASE + 0x0250)
+#define USB_L1_CONFIG	     (MSM_USB_BASE + 0x0254)
+
+#define L1_CONFIG_LPM_EN	BIT(4)
+#define L1_CONFIG_REMOTE_WAKEUP BIT(5)
+#define L1_CONFIG_GATE_SYS_CLK	BIT(7)
+#define L1_CONFIG_PHY_LPM	BIT(10)
+#define L1_CONFIG_PLL		BIT(11)
+
+#define AHB2AHB_BYPASS		BIT(31)
+#define AHB2AHB_BYPASS_BIT_MASK	BIT(31)
+#define AHB2AHB_BYPASS_CLEAR	(0 << 31)
+
 #define PORTSC_PHCD            (1 << 23) /* phy suspend mode */
 #define PORTSC_PTS_MASK         (3 << 30)
 #define PORTSC_PTS_ULPI         (3 << 30)
@@ -73,6 +86,10 @@
 #define PHY_RETEN               (1 << 1) /* PHY retention enable/disable */
 #define PHY_IDHV_INTEN          (1 << 8) /* PHY ID HV interrupt */
 #define PHY_OTGSESSVLDHV_INTEN  (1 << 9) /* PHY Session Valid HV int. */
+#define PHY_CLAMP_DPDMSE_EN	(1 << 21) /* PHY mpm DP DM clamp enable */
+#define PHY_POR_BIT_MASK	BIT(0)
+#define PHY_POR_ASSERT		(1 << 0) /* USB2 28nm PHY POR ASSERT */
+#define PHY_POR_DEASSERT	(0 << 0) /* USB2 28nm PHY POR DEASSERT */
 
 #define STS_PCI                 (1 << 2) /* R/WC - Port Change Detect */
 #define STS_URI                 (1 << 6) /* R/WC - RESET recv'd */

@@ -16,6 +16,8 @@
 
 #define MSM_USB_BASE	(udc->regs)
 
+#define CI13XXX_MSM_MAX_LOG2_ITC	7
+
 struct ci13xxx_udc_context {
 	int irq;
 	void __iomem *regs;
@@ -67,6 +69,26 @@ static void ci13xxx_msm_disconnect(void)
 				ULPI_CLR(ULPI_MISC_A));
 }
 
+/* Link power management will reduce power consumption by
+ * short time HW suspend/resume.
+ */
+static void ci13xxx_msm_set_l1(struct ci13xxx *udc)
+{
+	int temp;
+	struct device *dev = udc->gadget.dev.parent;
+
+	dev_dbg(dev, "Enable link power management\n");
+
+	/* Enable remote wakeup and L1 for IN EPs */
+	writel_relaxed(0xffff0000, USB_L1_EP_CTRL);
+
+	temp = readl_relaxed(USB_L1_CONFIG);
+	temp |= L1_CONFIG_LPM_EN | L1_CONFIG_REMOTE_WAKEUP |
+		L1_CONFIG_GATE_SYS_CLK | L1_CONFIG_PHY_LPM |
+		L1_CONFIG_PLL;
+	writel_relaxed(temp, USB_L1_CONFIG);
+}
+
 static void ci13xxx_msm_connect(void)
 {
 	struct ci13xxx *udc = _udc;
@@ -106,6 +128,9 @@ static void ci13xxx_msm_reset(void)
 
 	writel_relaxed(0, USB_AHBBURST);
 	writel_relaxed(0x08, USB_AHBMODE);
+
+	if (udc->gadget.l1_supported)
+		ci13xxx_msm_set_l1(udc);
 
 	if (phy && (phy->flags & ENABLE_SECONDARY_PHY)) {
 		int	temp;
@@ -177,7 +202,7 @@ static struct ci13xxx_udc_driver ci13xxx_msm_udc_driver = {
 				  CI13XXX_ZERO_ITC |
 				  CI13XXX_DISABLE_STREAMING |
 				  CI13XXX_IS_OTG,
-
+	.nz_itc			= 0,
 	.notify_event		= ci13xxx_msm_notify_event,
 };
 
@@ -231,8 +256,26 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 {
 	struct resource *res;
 	int ret;
+	struct ci13xxx_platform_data *pdata = pdev->dev.platform_data;
+	bool is_l1_supported = false;
 
 	dev_dbg(&pdev->dev, "ci13xxx_msm_probe\n");
+
+	if (pdata) {
+		/* Acceptable values for nz_itc are: 0,1,2,4,8,16,32,64 */
+		if (pdata->log2_itc > CI13XXX_MSM_MAX_LOG2_ITC ||
+			pdata->log2_itc <= 0)
+			ci13xxx_msm_udc_driver.nz_itc = 0;
+		else
+			ci13xxx_msm_udc_driver.nz_itc =
+				1 << (pdata->log2_itc-1);
+
+		is_l1_supported = pdata->l1_supported;
+		/* Set ahb2ahb bypass flag if it is requested. */
+		if (pdata->enable_ahb2ahb_bypass)
+			ci13xxx_msm_udc_driver.flags |=
+				CI13XXX_ENABLE_AHB2AHB_BYPASS;
+	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res) {
@@ -251,6 +294,8 @@ static int ci13xxx_msm_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "udc_probe failed\n");
 		goto iounmap;
 	}
+
+	_udc->gadget.l1_supported = is_l1_supported;
 
 	_udc_ctxt.irq = platform_get_irq(pdev, 0);
 	if (_udc_ctxt.irq < 0) {
@@ -315,7 +360,9 @@ void msm_hw_bam_disable(bool bam_disable)
 
 static struct platform_driver ci13xxx_msm_driver = {
 	.probe = ci13xxx_msm_probe,
-	.driver = { .name = "msm_hsusb", },
+	.driver = {
+		.name = "msm_hsusb",
+	},
 	.remove = ci13xxx_msm_remove,
 };
 MODULE_ALIAS("platform:msm_hsusb");

@@ -77,6 +77,20 @@ Optional properties :
 	starting controller using usbcmd run/stop bit.
 - qcom,usb2-enable-hsphy2: If present then USB2 controller is connected to 2nd
 	HSPHY.
+- qcom,hsusb-log2-itc: value of 2^(log2_itc-1) will be used as the
+	interrupt threshold (ITC), when log2_itc is between 1 to 7.
+- qcom,hsusb-l1-supported: If present, the device supports l1 (Link power
+	management).
+- qcom,no-selective-suspend: If present selective suspend is disabled on hub ports.
+- qcom,hsusb-otg-dpsehv-int: If present, indicates mpm interrupt to be configured
+	for detection of dp line transition during VDD minimization.
+- qcom,hsusb-otg-dmsehv-int: If present, indicates mpm interrupt to be configured
+	for detection of dm line transition during VDD minimization.
+- qcom,ahb-async-bridge-bypass: If present, indicates that enable AHB2AHB By Pass
+	mode with device controller for better throughput. With this mode, USB Core
+	runs using PNOC clock and synchronous to it. Hence it is must to have proper
+	"qcom,msm_bus,vectors" to have high bus frequency. User shouldn't try to
+	enable this feature without proper bus voting.
 
 Example HSUSB OTG controller device node :
 	usb@f9690000 {
@@ -101,6 +115,8 @@ Example HSUSB OTG controller device node :
                 HSUSB_3p3-supply = <&pm8226_l20>;
 		qcom,vdd-voltage-level = <1 5 7>;
 		qcom,dp-manual-pullup;
+		qcom,hsusb-otg-dpsehv-int = <49>;
+		qcom,hsusb-otg-dmsehv-int = <58>;
 		qcom,msm_bus,name = "usb2";
 		qcom,msm_bus,num_cases = <2>;
 		qcom,msm_bus,active_only = <0>;
@@ -150,12 +166,20 @@ Optional properties :
   for DMA latency in microsecs.
 - qcom,android-usb-cdrom : if this property is present then device creates
   a new LUN as CD-ROM
-
+- qcom,android-usb-internal-ums : if this property is present then device
+  creates a new LUN as internal usb mass storage.
+- qcom,streaming-func : add list of usb function name. If mention usb function
+  is being enable as part of USB composition, streaming mode is enable with
+  usb device controller to get better throughput. NOTE: Inverted CRC and
+  turnaround timeout is observed on enabling streaming. Hence it is required
+  to see these errors and number of erros on enabling this at USB level to make
+  final decision to enable this feature or not.
 Example Android USB device node :
 	android_usb@fc42b0c8 {
 		compatible = "qcom,android-usb";
 		reg = <0xfc42b0c8 0xc8>;
 		qcom,android-usb-swfi-latency = <1>;
+		qcom,streaming-func = "rndis","mtp";
 	};
 
 

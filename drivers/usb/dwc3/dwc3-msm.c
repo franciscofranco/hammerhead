@@ -35,6 +35,7 @@
 #include <linux/qpnp-misc.h>
 #include <linux/usb/msm_hsusb.h>
 #include <linux/regulator/consumer.h>
+#include <linux/pm_wakeup.h>
 #include <linux/power_supply.h>
 #include <linux/qpnp/qpnp-adc.h>
 #include <linux/slimport.h>
@@ -184,6 +185,7 @@ struct dwc3_msm {
 	struct regulator	*hsusb_vddcx;
 	struct regulator	*ssusb_1p8;
 	struct regulator	*ssusb_vddcx;
+	struct regulator	*dwc3_gdsc;
 
 	/* VBUS regulator if no OTG and running in host only mode */
 	struct regulator	*vbus_otg;
@@ -197,7 +199,6 @@ struct dwc3_msm {
 	int			hsphy_host_init_seq;
 	struct delayed_work	resume_work;
 	struct work_struct	restart_usb_work;
-	struct wake_lock	wlock;
 	struct dwc3_charger	charger;
 	struct usb_phy		*otg_xceiv;
 	struct delayed_work	chg_work;
@@ -391,12 +392,12 @@ static u32 dwc3_msm_ssusb_read_phycreg(void *base, u32 addr)
  * Return DBM EP number according to usb endpoint number.
  *
  */
-static int dwc3_msm_find_matching_dbm_ep(u8 usb_ep)
+static int dwc3_msm_find_matching_dbm_ep(struct dwc3_msm *mdwc, u8 usb_ep)
 {
 	int i;
 
-	for (i = 0; i < context->dbm_num_eps; i++)
-		if (context->ep_num_mapping[i] == usb_ep)
+	for (i = 0; i < mdwc->dbm_num_eps; i++)
+		if (mdwc->ep_num_mapping[i] == usb_ep)
 			return i;
 
 	return -ENODEV; /* Not found */
@@ -406,13 +407,13 @@ static int dwc3_msm_find_matching_dbm_ep(u8 usb_ep)
  * Return number of configured DBM endpoints.
  *
  */
-static int dwc3_msm_configured_dbm_ep_num(void)
+static int dwc3_msm_configured_dbm_ep_num(struct dwc3_msm *mdwc)
 {
 	int i;
 	int count = 0;
 
-	for (i = 0; i < context->dbm_num_eps; i++)
-		if (context->ep_num_mapping[i])
+	for (i = 0; i < mdwc->dbm_num_eps; i++)
+		if (mdwc->ep_num_mapping[i])
 			count++;
 
 	return count;
@@ -426,12 +427,13 @@ static int dwc3_msm_configured_dbm_ep_num(void)
  * @size - size of the event buffer.
  *
  */
-static int dwc3_msm_event_buffer_config(u32 addr, u16 size)
+static int dwc3_msm_event_buffer_config(struct dwc3_msm *mdwc,
+					u32 addr, u16 size)
 {
-	dev_dbg(context->dev, "%s\n", __func__);
+	dev_dbg(mdwc->dev, "%s\n", __func__);
 
-	dwc3_msm_write_reg(context->base, DBM_GEVNTADR, addr);
-	dwc3_msm_write_reg_field(context->base, DBM_GEVNTSIZ,
+	dwc3_msm_write_reg(mdwc->base, DBM_GEVNTADR, addr);
+	dwc3_msm_write_reg_field(mdwc->base, DBM_GEVNTSIZ,
 		DBM_GEVNTSIZ_MASK, size);
 
 	return 0;
@@ -441,19 +443,19 @@ static int dwc3_msm_event_buffer_config(u32 addr, u16 size)
  * Reset the DBM registers upon initialization.
  *
  */
-static int dwc3_msm_dbm_soft_reset(int enter_reset)
+static int dwc3_msm_dbm_soft_reset(struct dwc3_msm *mdwc, int enter_reset)
 {
-	dev_dbg(context->dev, "%s\n", __func__);
+	dev_dbg(mdwc->dev, "%s\n", __func__);
 	if (enter_reset) {
-		dev_dbg(context->dev, "enter DBM reset\n");
-		dwc3_msm_write_reg_field(context->base, DBM_SOFT_RESET,
+		dev_dbg(mdwc->dev, "enter DBM reset\n");
+		dwc3_msm_write_reg_field(mdwc->base, DBM_SOFT_RESET,
 			DBM_SFT_RST_MASK, 1);
 	} else {
-		dev_dbg(context->dev, "exit DBM reset\n");
-		dwc3_msm_write_reg_field(context->base, DBM_SOFT_RESET,
+		dev_dbg(mdwc->dev, "exit DBM reset\n");
+		dwc3_msm_write_reg_field(mdwc->base, DBM_SOFT_RESET,
 			DBM_SFT_RST_MASK, 0);
 		/*enable DBM*/
-		dwc3_msm_write_reg_field(context->base, QSCRATCH_GENERAL_CFG,
+		dwc3_msm_write_reg_field(mdwc->base, QSCRATCH_GENERAL_CFG,
 			DBM_EN_MASK, 0x1);
 	}
 
@@ -470,21 +472,21 @@ static int dwc3_msm_dbm_soft_reset(int enter_reset)
  * @enter_reset - should we enter a reset state or get out of it.
  *
  */
-static int dwc3_msm_dbm_ep_soft_reset(u8 dbm_ep, bool enter_reset)
+static int dwc3_msm_dbm_ep_soft_reset(struct dwc3_msm *mdwc,
+					u8 dbm_ep, bool enter_reset)
 {
-	dev_dbg(context->dev, "%s\n", __func__);
+	dev_dbg(mdwc->dev, "%s\n", __func__);
 
-	if (dbm_ep >= context->dbm_num_eps) {
-		dev_err(context->dev,
-				"%s: Invalid DBM ep index\n", __func__);
+	if (dbm_ep >= mdwc->dbm_num_eps) {
+		dev_err(mdwc->dev, "%s: Invalid DBM ep index\n", __func__);
 		return -ENODEV;
 	}
 
 	if (enter_reset) {
-		dwc3_msm_write_reg_field(context->base, DBM_SOFT_RESET,
+		dwc3_msm_write_reg_field(mdwc->base, DBM_SOFT_RESET,
 			DBM_SFT_RST_EPS_MASK & 1 << dbm_ep, 1);
 	} else {
-		dwc3_msm_write_reg_field(context->base, DBM_SOFT_RESET,
+		dwc3_msm_write_reg_field(mdwc->base, DBM_SOFT_RESET,
 			DBM_SFT_RST_EPS_MASK & 1 << dbm_ep, 0);
 	}
 
@@ -503,43 +505,43 @@ static int dwc3_msm_dbm_ep_soft_reset(u8 dbm_ep, bool enter_reset)
  *
  * @return int - DBM ep number.
  */
-static int dwc3_msm_dbm_ep_config(u8 usb_ep, u8 bam_pipe,
+static int dwc3_msm_dbm_ep_config(struct dwc3_msm *mdwc, u8 usb_ep, u8 bam_pipe,
 				  bool producer, bool disable_wb,
 				  bool internal_mem, bool ioc)
 {
 	u8 dbm_ep;
 	u32 ep_cfg;
 
-	dev_dbg(context->dev, "%s\n", __func__);
+	dev_dbg(mdwc->dev, "%s\n", __func__);
 
-	dbm_ep = dwc3_msm_find_matching_dbm_ep(usb_ep);
+	dbm_ep = dwc3_msm_find_matching_dbm_ep(mdwc, usb_ep);
 
 	if (dbm_ep < 0) {
-		dev_err(context->dev,
+		dev_err(mdwc->dev,
 				"%s: Invalid usb ep index\n", __func__);
 		return -ENODEV;
 	}
 	/* First, reset the dbm endpoint */
-	dwc3_msm_dbm_ep_soft_reset(dbm_ep, 0);
+	dwc3_msm_dbm_ep_soft_reset(mdwc, dbm_ep, 0);
 
 	/* Set ioc bit for dbm_ep if needed */
-	dwc3_msm_write_reg_field(context->base, DBM_DBG_CNFG,
+	dwc3_msm_write_reg_field(mdwc->base, DBM_DBG_CNFG,
 		DBM_ENABLE_IOC_MASK & 1 << dbm_ep, ioc ? 1 : 0);
 
 	ep_cfg = (producer ? DBM_PRODUCER : 0) |
 		(disable_wb ? DBM_DISABLE_WB : 0) |
 		(internal_mem ? DBM_INT_RAM_ACC : 0);
 
-	dwc3_msm_write_reg_field(context->base, DBM_EP_CFG(dbm_ep),
+	dwc3_msm_write_reg_field(mdwc->base, DBM_EP_CFG(dbm_ep),
 		DBM_PRODUCER | DBM_DISABLE_WB | DBM_INT_RAM_ACC, ep_cfg >> 8);
 
-	dwc3_msm_write_reg_field(context->base, DBM_EP_CFG(dbm_ep), USB3_EPNUM,
+	dwc3_msm_write_reg_field(mdwc->base, DBM_EP_CFG(dbm_ep), USB3_EPNUM,
 		usb_ep);
-	dwc3_msm_write_reg_field(context->base, DBM_EP_CFG(dbm_ep),
+	dwc3_msm_write_reg_field(mdwc->base, DBM_EP_CFG(dbm_ep),
 		DBM_BAM_PIPE_NUM, bam_pipe);
-	dwc3_msm_write_reg_field(context->base, DBM_PIPE_CFG, 0x000000ff,
+	dwc3_msm_write_reg_field(mdwc->base, DBM_PIPE_CFG, 0x000000ff,
 		0xe4);
-	dwc3_msm_write_reg_field(context->base, DBM_EP_CFG(dbm_ep), DBM_EN_EP,
+	dwc3_msm_write_reg_field(mdwc->base, DBM_EP_CFG(dbm_ep), DBM_EN_EP,
 		1);
 
 	return dbm_ep;
@@ -551,35 +553,34 @@ static int dwc3_msm_dbm_ep_config(u8 usb_ep, u8 bam_pipe,
  * @usb_ep - USB ep number.
  *
  */
-static int dwc3_msm_dbm_ep_unconfig(u8 usb_ep)
+static int dwc3_msm_dbm_ep_unconfig(struct dwc3_msm *mdwc, u8 usb_ep)
 {
 	u8 dbm_ep;
 	u32 data;
 
-	dev_dbg(context->dev, "%s\n", __func__);
+	dev_dbg(mdwc->dev, "%s\n", __func__);
 
-	dbm_ep = dwc3_msm_find_matching_dbm_ep(usb_ep);
+	dbm_ep = dwc3_msm_find_matching_dbm_ep(mdwc, usb_ep);
 
 	if (dbm_ep < 0) {
-		dev_err(context->dev,
-				"%s: Invalid usb ep index\n", __func__);
+		dev_err(mdwc->dev, "%s: Invalid usb ep index\n", __func__);
 		return -ENODEV;
 	}
 
-	context->ep_num_mapping[dbm_ep] = 0;
+	mdwc->ep_num_mapping[dbm_ep] = 0;
 
-	data = dwc3_msm_read_reg(context->base, DBM_EP_CFG(dbm_ep));
+	data = dwc3_msm_read_reg(mdwc->base, DBM_EP_CFG(dbm_ep));
 	data &= (~0x1);
-	dwc3_msm_write_reg(context->base, DBM_EP_CFG(dbm_ep), data);
+	dwc3_msm_write_reg(mdwc->base, DBM_EP_CFG(dbm_ep), data);
 
 	/* Reset the dbm endpoint */
-	dwc3_msm_dbm_ep_soft_reset(dbm_ep, true);
+	dwc3_msm_dbm_ep_soft_reset(mdwc, dbm_ep, true);
 	/*
 	 * 10 usec delay is required before deasserting DBM endpoint reset
 	 * according to hardware programming guide.
 	 */
 	udelay(10);
-	dwc3_msm_dbm_ep_soft_reset(dbm_ep, false);
+	dwc3_msm_dbm_ep_soft_reset(mdwc, dbm_ep, false);
 
 	return 0;
 }
@@ -598,15 +599,17 @@ int msm_data_fifo_config(struct usb_ep *ep, u32 addr, u32 size, u8 dst_pipe_idx)
 {
 	u8 dbm_ep;
 	struct dwc3_ep *dep = to_dwc3_ep(ep);
+	struct dwc3 *dwc = dep->dwc;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dwc->dev->parent);
 	u8 bam_pipe = dst_pipe_idx;
 
-	dev_dbg(context->dev, "%s\n", __func__);
+	dev_dbg(mdwc->dev, "%s\n", __func__);
 
 	dbm_ep = bam_pipe;
-	context->ep_num_mapping[dbm_ep] = dep->number;
+	mdwc->ep_num_mapping[dbm_ep] = dep->number;
 
-	dwc3_msm_write_reg(context->base, DBM_DATA_FIFO(dbm_ep), addr);
-	dwc3_msm_write_reg_field(context->base, DBM_DATA_FIFO_SIZE(dbm_ep),
+	dwc3_msm_write_reg(mdwc->base, DBM_DATA_FIFO(dbm_ep), addr);
+	dwc3_msm_write_reg_field(mdwc->base, DBM_DATA_FIFO_SIZE(dbm_ep),
 		DBM_DATA_FIFO_SIZE_MASK, size);
 
 	return 0;
@@ -626,12 +629,12 @@ static void dwc3_msm_req_complete_func(struct usb_ep *ep,
 				       struct usb_request *request)
 {
 	struct dwc3_ep *dep = to_dwc3_ep(ep);
+	struct dwc3 *dwc = dep->dwc;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dwc->dev->parent);
 	struct dwc3_msm_req_complete *req_complete = NULL;
 
 	/* Find original request complete function and remove it from list */
-	list_for_each_entry(req_complete,
-				&context->req_complete_list,
-				list_item) {
+	list_for_each_entry(req_complete, &mdwc->req_complete_list, list_item) {
 		if (req_complete->req == request)
 			break;
 	}
@@ -650,14 +653,14 @@ static void dwc3_msm_req_complete_func(struct usb_ep *ep,
 	dep->busy_slot++;
 
 	/* Unconfigure dbm ep */
-	dwc3_msm_dbm_ep_unconfig(dep->number);
+	dwc3_msm_dbm_ep_unconfig(mdwc, dep->number);
 
 	/*
 	 * If this is the last endpoint we unconfigured, than reset also
 	 * the event buffers.
 	 */
-	if (0 == dwc3_msm_configured_dbm_ep_num())
-		dwc3_msm_event_buffer_config(0, 0);
+	if (0 == dwc3_msm_configured_dbm_ep_num(mdwc))
+		dwc3_msm_event_buffer_config(mdwc, 0, 0);
 
 	/*
 	 * Call original complete function, notice that dwc->lock is already
@@ -770,6 +773,7 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 	struct dwc3_request *req = to_dwc3_request(request);
 	struct dwc3_ep *dep = to_dwc3_ep(ep);
 	struct dwc3 *dwc = dep->dwc;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dwc->dev->parent);
 	struct dwc3_msm_req_complete *req_complete;
 	unsigned long flags;
 	int ret = 0;
@@ -782,23 +786,23 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 
 	if (!(request->udc_priv & MSM_SPS_MODE)) {
 		/* Not SPS mode, call original queue */
-		dev_vdbg(dwc->dev, "%s: not sps mode, use regular queue\n",
+		dev_vdbg(mdwc->dev, "%s: not sps mode, use regular queue\n",
 					__func__);
 
-		return (context->original_ep_ops[dep->number])->queue(ep,
+		return (mdwc->original_ep_ops[dep->number])->queue(ep,
 								request,
 								gfp_flags);
 	}
 
 	if (!dep->endpoint.desc) {
-		dev_err(dwc->dev,
+		dev_err(mdwc->dev,
 			"%s: trying to queue request %p to disabled ep %s\n",
 			__func__, request, ep->name);
 		return -EPERM;
 	}
 
 	if (dep->number == 0 || dep->number == 1) {
-		dev_err(dwc->dev,
+		dev_err(mdwc->dev,
 			"%s: trying to queue dbm request %p to control ep %s\n",
 			__func__, request, ep->name);
 		return -EPERM;
@@ -807,7 +811,7 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 
 	if (dep->busy_slot != dep->free_slot || !list_empty(&dep->request_list)
 					 || !list_empty(&dep->req_queued)) {
-		dev_err(dwc->dev,
+		dev_err(mdwc->dev,
 			"%s: trying to queue dbm request %p tp ep %s\n",
 			__func__, request, ep->name);
 		return -EPERM;
@@ -822,12 +826,12 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 	 */
 	req_complete = kzalloc(sizeof(*req_complete), GFP_KERNEL);
 	if (!req_complete) {
-		dev_err(dep->dwc->dev, "%s: not enough memory\n", __func__);
+		dev_err(mdwc->dev, "%s: not enough memory\n", __func__);
 		return -ENOMEM;
 	}
 	req_complete->req = request;
 	req_complete->orig_complete = request->complete;
-	list_add_tail(&req_complete->list_item, &context->req_complete_list);
+	list_add_tail(&req_complete->list_item, &mdwc->req_complete_list);
 	request->complete = dwc3_msm_req_complete_func;
 
 	/*
@@ -839,11 +843,11 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 	internal_mem = ((request->udc_priv & MSM_INTERNAL_MEM) ? true : false);
 	ioc = ((request->udc_priv & MSM_ETD_IOC) ? true : false);
 
-	ret = dwc3_msm_dbm_ep_config(dep->number,
+	ret = dwc3_msm_dbm_ep_config(mdwc, dep->number,
 					bam_pipe, producer,
 					disable_wb, internal_mem, ioc);
 	if (ret < 0) {
-		dev_err(context->dev,
+		dev_err(mdwc->dev,
 			"error %d after calling dwc3_msm_dbm_ep_config\n",
 			ret);
 		return ret;
@@ -863,13 +867,13 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 	ret = __dwc3_msm_ep_queue(dep, req);
 	spin_unlock_irqrestore(&dwc->lock, flags);
 	if (ret < 0) {
-		dev_err(context->dev,
+		dev_err(mdwc->dev,
 			"error %d after calling __dwc3_msm_ep_queue\n", ret);
 		return ret;
 	}
 
 	speed = dwc3_readl(dwc->regs, DWC3_DSTS) & DWC3_DSTS_CONNECTSPD;
-	dwc3_msm_write_reg(context->base, DBM_GEN_CFG, speed >> 2);
+	dwc3_msm_write_reg(mdwc->base, DBM_GEN_CFG, speed >> 2);
 
 	return 0;
 }
@@ -891,25 +895,27 @@ static int dwc3_msm_ep_queue(struct usb_ep *ep,
 int msm_ep_config(struct usb_ep *ep)
 {
 	struct dwc3_ep *dep = to_dwc3_ep(ep);
+	struct dwc3 *dwc = dep->dwc;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dwc->dev->parent);
 	struct usb_ep_ops *new_ep_ops;
 
-	dwc3_msm_event_buffer_config(dwc3_msm_read_reg(context->base,
-			DWC3_GEVNTADRLO(0)),
-			dwc3_msm_read_reg(context->base, DWC3_GEVNTSIZ(0)));
+	dwc3_msm_event_buffer_config(mdwc,
+			dwc3_msm_read_reg(mdwc->base, DWC3_GEVNTADRLO(0)),
+			dwc3_msm_read_reg(mdwc->base, DWC3_GEVNTSIZ(0)));
 
 	/* Save original ep ops for future restore*/
-	if (context->original_ep_ops[dep->number]) {
-		dev_err(context->dev,
+	if (mdwc->original_ep_ops[dep->number]) {
+		dev_err(mdwc->dev,
 			"ep [%s,%d] already configured as msm endpoint\n",
 			ep->name, dep->number);
 		return -EPERM;
 	}
-	context->original_ep_ops[dep->number] = ep->ops;
+	mdwc->original_ep_ops[dep->number] = ep->ops;
 
 	/* Set new usb ops as we like */
 	new_ep_ops = kzalloc(sizeof(struct usb_ep_ops), GFP_KERNEL);
 	if (!new_ep_ops) {
-		dev_err(context->dev,
+		dev_err(mdwc->dev,
 			"%s: unable to allocate mem for new usb ep ops\n",
 			__func__);
 		return -ENOMEM;
@@ -941,18 +947,20 @@ EXPORT_SYMBOL(msm_ep_config);
 int msm_ep_unconfig(struct usb_ep *ep)
 {
 	struct dwc3_ep *dep = to_dwc3_ep(ep);
+	struct dwc3 *dwc = dep->dwc;
+	struct dwc3_msm *mdwc = dev_get_drvdata(dwc->dev->parent);
 	struct usb_ep_ops *old_ep_ops;
 
 	/* Restore original ep ops */
-	if (!context->original_ep_ops[dep->number]) {
-		dev_err(context->dev,
+	if (!mdwc->original_ep_ops[dep->number]) {
+		dev_err(mdwc->dev,
 			"ep [%s,%d] was not configured as msm endpoint\n",
 			ep->name, dep->number);
 		return -EINVAL;
 	}
 	old_ep_ops = (struct usb_ep_ops	*)ep->ops;
-	ep->ops = context->original_ep_ops[dep->number];
-	context->original_ep_ops[dep->number] = NULL;
+	ep->ops = mdwc->original_ep_ops[dep->number];
+	mdwc->original_ep_ops[dep->number] = NULL;
 	kfree(old_ep_ops);
 
 	/*
@@ -997,14 +1005,16 @@ static void dwc3_restart_usb_work(struct work_struct *w)
  * This performs full hardware reset and re-initialization which
  * might be required by some DBM client driver during uninit/cleanup.
  */
-void msm_dwc3_restart_usb_session(void)
+void msm_dwc3_restart_usb_session(struct usb_gadget *gadget)
 {
-	struct dwc3_msm *mdwc = context;
+	struct dwc3 *dwc = container_of(gadget, struct dwc3, gadget);
+	struct dwc3_msm *mdwc = dev_get_drvdata(dwc->dev->parent);
+
+	if (mdwc)
+		return;
 
 	dev_dbg(mdwc->dev, "%s\n", __func__);
 	queue_work(system_nrt_wq, &mdwc->restart_usb_work);
-
-	return;
 }
 EXPORT_SYMBOL(msm_dwc3_restart_usb_session);
 
@@ -1240,6 +1250,37 @@ put_1p8_lpm:
 	return rc < 0 ? rc : 0;
 }
 
+/*
+ * Config Global Distributed Switch Controller (GDSC)
+ * to support controller power collapse
+ */
+static int dwc3_msm_config_gdsc(struct dwc3_msm *msm, int on)
+{
+	int ret = 0;
+
+	if (IS_ERR(msm->dwc3_gdsc))
+		return 0;
+
+	if (!msm->dwc3_gdsc) {
+		msm->dwc3_gdsc = devm_regulator_get(msm->dev,
+			"USB3_GDSC");
+		if (IS_ERR(msm->dwc3_gdsc))
+			return 0;
+	}
+
+	if (on) {
+		ret = regulator_enable(msm->dwc3_gdsc);
+		if (ret) {
+			dev_err(msm->dev, "unable to enable usb3 gdsc\n");
+			return ret;
+		}
+	} else {
+		regulator_disable(msm->dwc3_gdsc);
+	}
+
+	return 0;
+}
+
 static int dwc3_msm_link_clk_reset(bool assert)
 {
 	int ret = 0;
@@ -1410,9 +1451,9 @@ static void dwc3_msm_block_reset(bool core_reset)
 	}
 
 	/* Reset the DBM */
-	dwc3_msm_dbm_soft_reset(1);
+	dwc3_msm_dbm_soft_reset(mdwc, 1);
 	usleep_range(1000, 1200);
-	dwc3_msm_dbm_soft_reset(0);
+	dwc3_msm_dbm_soft_reset(mdwc, 0);
 }
 
 static void dwc3_chg_enable_secondary_det(struct dwc3_msm *mdwc)
@@ -1707,6 +1748,11 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 
 	/* make sure above writes are completed before turning off clocks */
 	wmb();
+
+	/* remove vote for controller power collapse */
+	if (!host_bus_suspend)
+		dwc3_msm_config_gdsc(mdwc, 0);
+
 	if (!host_bus_suspend || !host_ss_active) {
 		clk_disable_unprepare(mdwc->core_clk);
 		mdwc->lpm_flags |= MDWC3_CORECLK_OFF;
@@ -1745,7 +1791,7 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc)
 		enable_irq_wake(mdwc->hs_phy_irq);
 	}
 
-	wake_unlock(&mdwc->wlock);
+	pm_relax(mdwc->dev);
 	atomic_set(&mdwc->in_lpm, 1);
 
 	dev_info(mdwc->dev, "DWC3 in low power mode\n");
@@ -1766,7 +1812,7 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 		return 0;
 	}
 
-	wake_lock(&mdwc->wlock);
+	pm_stay_awake(mdwc->dev);
 
 	if (mdwc->bus_perf_client) {
 		ret = msm_bus_scale_client_update_request(
@@ -1787,6 +1833,10 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 						__func__, ret);
 		mdwc->lpm_flags &= ~MDWC3_TCXO_SHUTDOWN;
 	}
+
+	/* add vote for controller power collapse */
+	if (!host_bus_suspend)
+		dwc3_msm_config_gdsc(mdwc, 1);
 
 	if (!host_bus_suspend)
 		clk_prepare_enable(mdwc->utmi_clk);
@@ -2056,8 +2106,12 @@ static int dwc3_msm_power_set_property_usb(struct power_supply *psy,
 		if (mdwc->otg_xceiv && !mdwc->ext_inuse &&
 		    (mdwc->ext_xceiv.otg_capability || !init)) {
 			mdwc->ext_xceiv.bsv = val->intval;
+			/*
+			 * set debouncing delay to 120msec. Otherwise battery
+			 * charging CDP complaince test fails if delay > 120ms.
+			 */
 			queue_delayed_work(system_nrt_wq,
-							&mdwc->resume_work, 20);
+							&mdwc->resume_work, 12);
 
 			if (!init)
 				init = true;
@@ -2326,11 +2380,18 @@ static int __devinit dwc3_msm_probe(struct platform_device *pdev)
 	INIT_WORK(&msm->id_work, dwc3_id_work);
 	INIT_DELAYED_WORK(&msm->init_adc_work, dwc3_init_adc_work);
 
+	ret = dwc3_msm_config_gdsc(msm, 1);
+	if (ret) {
+		dev_err(&pdev->dev, "unable to configure usb3 gdsc\n");
+		return ret;
+	}
+
 	msm->xo_clk = clk_get(&pdev->dev, "xo");
 	if (IS_ERR(msm->xo_clk)) {
 		dev_err(&pdev->dev, "%s unable to get TCXO buffer handle\n",
 								__func__);
-		return PTR_ERR(msm->xo_clk);
+		ret = PTR_ERR(msm->xo_clk);
+		goto disable_dwc3_gdsc;
 	}
 
 	ret = clk_prepare_enable(msm->xo_clk);
@@ -2713,8 +2774,8 @@ static int __devinit dwc3_msm_probe(struct platform_device *pdev)
 		msm->otg_xceiv = NULL;
 	}
 
-	wake_lock_init(&msm->wlock, WAKE_LOCK_SUSPEND, "msm_dwc3");
-	wake_lock(&msm->wlock);
+	device_init_wakeup(msm->dev, 1);
+	pm_stay_awake(msm->dev);
 	dwc3_debugfs_init(msm);
 
 	return 0;
@@ -2756,6 +2817,8 @@ disable_xo:
 	clk_disable_unprepare(msm->xo_clk);
 put_xo:
 	clk_put(msm->xo_clk);
+disable_dwc3_gdsc:
+	dwc3_msm_config_gdsc(msm, 0);
 
 	return ret;
 }
@@ -2778,7 +2841,7 @@ static int __devexit dwc3_msm_remove(struct platform_device *pdev)
 		regulator_disable(msm->vbus_otg);
 
 	pm_runtime_disable(msm->dev);
-	wake_lock_destroy(&msm->wlock);
+	device_init_wakeup(msm->dev, 0);
 
 	dwc3_hsusb_ldo_enable(0);
 	dwc3_hsusb_ldo_init(0);
@@ -2795,6 +2858,8 @@ static int __devexit dwc3_msm_remove(struct platform_device *pdev)
 	clk_disable_unprepare(msm->ref_clk);
 	clk_disable_unprepare(msm->xo_clk);
 	clk_put(msm->xo_clk);
+
+	dwc3_msm_config_gdsc(msm, 0);
 
 	return 0;
 }

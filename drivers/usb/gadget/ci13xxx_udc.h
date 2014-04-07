@@ -129,12 +129,14 @@ struct ci13xxx;
 struct ci13xxx_udc_driver {
 	const char	*name;
 	unsigned long	 flags;
+	unsigned int nz_itc;
 #define CI13XXX_REGS_SHARED		BIT(0)
 #define CI13XXX_REQUIRE_TRANSCEIVER	BIT(1)
 #define CI13XXX_PULLUP_ON_VBUS		BIT(2)
 #define CI13XXX_DISABLE_STREAMING	BIT(3)
 #define CI13XXX_ZERO_ITC		BIT(4)
 #define CI13XXX_IS_OTG			BIT(5)
+#define CI13XXX_ENABLE_AHB2AHB_BYPASS	BIT(6)
 
 #define CI13XXX_CONTROLLER_RESET_EVENT			0
 #define CI13XXX_CONTROLLER_CONNECT_EVENT		1
@@ -180,11 +182,6 @@ struct ci13xxx {
 						first EP. */
 };
 
-struct ci13xxx_platform_data {
-	u8 usb_core_id;
-	void *prv_data;
-};
-
 /******************************************************************************
  * REGISTERS
  *****************************************************************************/
@@ -200,6 +197,9 @@ struct ci13xxx_platform_data {
 
 /* TESTMODE */
 #define TESTMODE_FORCE        BIT(0)
+
+/* AHB_MODE */
+#define AHB2AHB_BYPASS	      BIT(31)
 
 /* USBCMD */
 #define USBCMD_RS             BIT(0)
