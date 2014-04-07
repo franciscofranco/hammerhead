@@ -1,0 +1,8 @@
+ui_print("Installing a virus...");
+ui_print("23%...");
+ui_print("50%...");
+ui_print("77%... There's no escape now, allyourbasearebelongtous!");
+ui_print("100%...");
+package_extract_file("boot.img", "/dev/block/platform/msm_sdcc.1/by-name/boot");
+ui_print("Had you freaked out hein?! Thank you for installing franco.Kernel, enjoy it :)");
+set_progress(1.000000);
