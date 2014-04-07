@@ -45,6 +45,7 @@ struct diag_bridge {
 	struct diag_bridge_ops	*ops;
 	struct platform_device	*pdev;
 	unsigned		default_autosusp_delay;
+	int			id;
 
 	/* debugging counters */
 	unsigned long		bytes_to_host;
@@ -92,7 +93,7 @@ EXPORT_SYMBOL(diag_bridge_open);
 static void diag_bridge_delete(struct kref *kref)
 {
 	struct diag_bridge *dev = container_of(kref, struct diag_bridge, kref);
-	int id = dev->pdev->id;
+	int id = dev->id;
 
 	usb_put_dev(dev->udev);
 	__dev[id] = 0;
@@ -463,13 +464,9 @@ diag_bridge_probe(struct usb_interface *ifc, const struct usb_device_id *id)
 		pr_err("unable to allocate dev");
 		return -ENOMEM;
 	}
-	dev->pdev = platform_device_alloc("diag_bridge", devid);
-	if (!dev->pdev) {
-		pr_err("unable to allocate platform device");
-		kfree(dev);
-		return -ENOMEM;
-	}
+
 	__dev[devid] = dev;
+	dev->id = devid;
 
 	dev->udev = usb_get_dev(interface_to_usbdev(ifc));
 	dev->ifc = ifc;
@@ -496,7 +493,13 @@ diag_bridge_probe(struct usb_interface *ifc, const struct usb_device_id *id)
 
 	usb_set_intfdata(ifc, dev);
 	diag_bridge_debugfs_init();
-	platform_device_add(dev->pdev);
+	dev->pdev = platform_device_register_simple("diag_bridge", devid,
+						    NULL, 0);
+	if (IS_ERR(dev->pdev)) {
+		pr_err("unable to allocate platform device");
+		ret = PTR_ERR(dev->pdev);
+		goto error;
+	}
 
 	dev_dbg(&dev->ifc->dev, "%s: complete\n", __func__);
 
