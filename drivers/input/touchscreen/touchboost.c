@@ -44,10 +44,10 @@ static struct workqueue_struct *cpu_boost_wq;
 
 static struct work_struct input_boost_work;
 
-static unsigned int boost_ms = 100;
+static unsigned int boost_ms = 30;
 module_param(boost_ms, uint, 0644);
 
-static unsigned int sync_threshold = 1728000;
+static unsigned int sync_threshold = 1036800;
 module_param(sync_threshold, uint, 0644);
 
 static unsigned int input_boost_freq = 1497600;
@@ -90,6 +90,9 @@ static int boost_adjust_notify(struct notifier_block *nb, unsigned long val, voi
 	pr_debug("CPU%u policy min before boost: %u kHz\n",
 		 cpu, policy->min);
 	pr_debug("CPU%u boost min: %u kHz\n", cpu, min);
+
+	if (policy->cur > min)
+		return NOTIFY_OK;
 
 	cpufreq_verify_within_limits(policy, min, UINT_MAX);
 
