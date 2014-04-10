@@ -733,7 +733,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int max_load_other_cpu = 0;
 	struct cpufreq_policy *policy;
 	unsigned int j;
-	bool boosted = ktime_to_us(ktime_get()) < (last_input_time + 250000);
+	bool boosted = ktime_to_us(ktime_get()) < 
+		(last_input_time + dbs_tuners_ins.boostpulse_duration);
 
 	this_dbs_info->freq_lo = 0;
 	policy = this_dbs_info->cur_policy;
@@ -847,9 +848,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/*
 	 * Input boost
 	 */
-	if (boosted)
-	{
-		if (policy->cur < dbs_tuners_ins.boostpulse_duration)
+	if (boosted) {
+		if (policy->cur < dbs_tuners_ins.input_boost_freq)
 			dbs_freq_increase(policy, dbs_tuners_ins.input_boost_freq);
 
 		return;
