@@ -1099,11 +1099,30 @@ bail_acq_sema_failed:
 	atomic_set(&this_dbs_info->src_sync_cpu, -1);
 }
 
+static void dbs_sync_set_prio(unsigned int policy, unsigned int prio)
+{
+	struct sched_param param = { .sched_priority = prio };
+
+	sched_setscheduler(current, policy, &param);
+}
+
+static void dbs_sync_park(unsigned int cpu)
+{
+	dbs_sync_set_prio(SCHED_NORMAL, 0);
+}
+
+static void dbs_sync_unpark(unsigned int cpu)
+{
+	dbs_sync_set_prio(SCHED_FIFO, MAX_RT_PRIO - 1);
+}
+
 static struct smp_hotplug_thread dbs_sync_threads = {
 	.store		= &sync_thread,
 	.thread_should_run = dbs_sync_should_run,
 	.thread_fn	= run_dbs_sync,
 	.thread_comm	= "dbs_sync/%u",
+	.park		= dbs_sync_park,
+	.unpark		= dbs_sync_unpark,
 };
 
 static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
