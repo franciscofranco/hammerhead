@@ -140,6 +140,8 @@ static struct dbs_tuners {
 	unsigned int sampling_down_factor;
 	int          powersave_bias;
 	unsigned int io_is_busy;
+	unsigned int input_boost_freq;
+	unsigned int boostpulse_duration;
 } dbs_tuners_ins = {
 	.up_threshold_multi_core = DEF_FREQUENCY_UP_THRESHOLD,
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
@@ -152,6 +154,8 @@ static struct dbs_tuners {
 	.sync_freq = 960000,
 	.optimal_freq = 960000,
 	.io_is_busy = 1,
+	.input_boost_freq = 1497600,
+	.boostpulse_duration = 250000,
 };
 
 extern u64 last_input_time;
@@ -275,6 +279,8 @@ show_one(down_differential_multi_core, down_differential_multi_core);
 show_one(optimal_freq, optimal_freq);
 show_one(up_threshold_any_cpu_load, up_threshold_any_cpu_load);
 show_one(sync_freq, sync_freq);
+show_one(input_boost_freq, input_boost_freq);
+show_one(boostpulse_duration, boostpulse_duration);
 
 static ssize_t show_powersave_bias
 (struct kobject *kobj, struct attribute *attr, char *buf)
@@ -640,6 +646,32 @@ skip_this_cpu_bypass:
 	return count;
 }
 
+static ssize_t store_input_boost_freq(struct kobject *a, struct attribute *b,
+				   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	dbs_tuners_ins.input_boost_freq = input;
+	return count;
+}
+
+static ssize_t store_boostpulse_duration(struct kobject *a, struct attribute *b,
+				   const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	dbs_tuners_ins.boostpulse_duration = input;
+	return count;
+}
+
 define_one_global_rw(sampling_rate);
 define_one_global_rw(io_is_busy);
 define_one_global_rw(up_threshold);
@@ -652,6 +684,8 @@ define_one_global_rw(down_differential_multi_core);
 define_one_global_rw(optimal_freq);
 define_one_global_rw(up_threshold_any_cpu_load);
 define_one_global_rw(sync_freq);
+define_one_global_rw(input_boost_freq);
+define_one_global_rw(boostpulse_duration);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
@@ -667,6 +701,8 @@ static struct attribute *dbs_attributes[] = {
 	&optimal_freq.attr,
 	&up_threshold_any_cpu_load.attr,
 	&sync_freq.attr,
+	&input_boost_freq.attr,
+	&boostpulse_duration.attr,
 	NULL
 };
 
@@ -813,8 +849,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 */
 	if (boosted)
 	{
-		if (policy->cur < 1497600)
-			dbs_freq_increase(policy, 1497600);
+		if (policy->cur < dbs_tuners_ins.boostpulse_duration)
+			dbs_freq_increase(policy, dbs_tuners_ins.input_boost_freq);
 
 		return;
 	}
