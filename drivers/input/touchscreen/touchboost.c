@@ -247,6 +247,9 @@ static int boost_migration_notify(struct notifier_block *nb,
 	if (thread == current)
 		return NOTIFY_OK;
 
+	if (mnd->dest_cpu == mnd->src_cpu)
+		return NOTIFY_OK;
+
 	pr_debug("Migration: CPU%d --> CPU%d\n", mnd->src_cpu, mnd->dest_cpu);
 	spin_lock_irqsave(&s->lock, flags);
 	s->pending = true;
