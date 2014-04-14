@@ -40,12 +40,14 @@
 #define DEFAULT_MIN_TIME_CPU_ONLINE 1
 #define DEFAULT_TIMER 1
 
+#define MIN_CPU_UP_US 1000 * USEC_PER_MSEC;
+
 extern bool boosted;
 
 static struct cpu_stats
 {
 	unsigned int counter[2];
-	unsigned long timestamp[2];
+	u64 timestamp[2];
 	struct notifier_block notif;
 } stats = {
 	.counter = {0},
@@ -100,9 +102,8 @@ struct cpu_load_data {
 static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 
 static struct workqueue_struct *wq;
-static struct delayed_work decide_hotplug;
+static struct delayed_work decide_hotplug, resume;
 static struct work_struct suspend;
-static struct work_struct resume;
 
 static inline int get_cpu_load(unsigned int cpu)
 {
@@ -133,20 +134,23 @@ static inline int get_cpu_load(unsigned int cpu)
 static void cpu_revive(unsigned int cpu)
 {
 	cpu_up(cpu);
-	stats.timestamp[cpu - 2] = jiffies;
+	stats.timestamp[cpu - 2] = ktime_to_us(ktime_get());
 }
 
 static void cpu_smash(unsigned int cpu)
 {
 	struct hotplug_tunables *t = &tunables;
+	u64 extra_time = MIN_CPU_UP_US;
 
 	/*
 	 * Let's not unplug this cpu unless its been online for longer than
 	 * 1sec to avoid consecutive ups and downs if the load is varying
 	 * closer to the threshold point.
 	 */
-	if (time_is_after_jiffies(stats.timestamp[cpu - 2] + 
-			(t->min_time_cpu_online * HZ)))
+	if (unlikely(t->min_time_cpu_online > 1))
+		extra_time = t->min_time_cpu_online * MIN_CPU_UP_US;
+
+	if (ktime_to_us(ktime_get()) < stats.timestamp[cpu - 2] + extra_time)
 		return;
 
 	cpu_down(cpu);
@@ -164,7 +168,8 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 	struct hotplug_tunables *t = &tunables;
 
 	/*
-	 * reschedule early when the system is during FREEZER phase
+	 * reschedule early when the system has woken up from the FREEZER but the
+	 * display is not on
 	 */
 	if (unlikely(nr_online_cpus == 1))
 		goto reschedule;
@@ -236,8 +241,6 @@ static void mako_hotplug_suspend(struct work_struct *work)
 {
 	int cpu;
 
-	pr_info("%s: suspend\n", MAKO_HOTPLUG);
-
 	stats.counter[0] = 0;
 	stats.counter[1] = 0;
 
@@ -248,28 +251,25 @@ static void mako_hotplug_suspend(struct work_struct *work)
 
 		cpu_down(cpu);
 	}
+
+	pr_info("%s: suspend\n", MAKO_HOTPLUG);
 }
 
 static void __ref mako_hotplug_resume(struct work_struct *work)
 {
-	int cpu;
+	int cpu = 1;
+
+	if (cpu_is_offline(cpu))
+		cpu_up(cpu);
 
 	pr_info("%s: resume\n", MAKO_HOTPLUG);
-
-	for_each_possible_cpu(cpu)
-	{
-		if (!cpu)
-			continue;
-
-		cpu_up(cpu);
-	}
 }
 
 static int lcd_notifier_callback(struct notifier_block *this,
 									unsigned long event, void *data)
 {
 	if (event == LCD_EVENT_ON_START)
-		queue_work_on(0, wq, &resume);
+		queue_delayed_work_on(0, wq, &resume, HZ);
 	else if (event == LCD_EVENT_OFF_START)
 		queue_work_on(0, wq, &suspend);
 
@@ -473,7 +473,7 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	int ret = 0;
 	struct hotplug_tunables *t = &tunables;
 
-	wq = alloc_workqueue("mako_hotplug_workqueue", WQ_HIGHPRI | WQ_FREEZABLE, 1);
+	wq = alloc_workqueue("mako_hotplug_workqueue", WQ_FREEZABLE, 1);
     
 	if (!wq)
 	{
@@ -488,8 +488,8 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	t->min_time_cpu_online = DEFAULT_MIN_TIME_CPU_ONLINE;
 	t->timer = DEFAULT_TIMER;
 
-	stats.timestamp[0] = jiffies;
-	stats.timestamp[1] = jiffies;
+	stats.timestamp[0] = ktime_to_us(ktime_get());
+	stats.timestamp[1] = ktime_to_us(ktime_get());
 
 	stats.notif.notifier_call = lcd_notifier_callback;
 
@@ -517,7 +517,7 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	}
 
 	INIT_WORK(&suspend, mako_hotplug_suspend);
-	INIT_WORK(&resume, mako_hotplug_resume);
+	INIT_DELAYED_WORK(&resume, mako_hotplug_resume);
 	INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
 
 	queue_delayed_work_on(0, wq, &decide_hotplug, HZ * 20);

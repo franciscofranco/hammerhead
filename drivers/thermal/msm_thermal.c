@@ -136,7 +136,7 @@ int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
 	BUG_ON(pdata->sensor_id >= TSENS_MAX_SENSORS);
 	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
     
-	wq = alloc_workqueue("msm_thermal_workqueue", WQ_UNBOUND, 0);
+	wq = alloc_workqueue("msm_thermal_workqueue", WQ_FREEZABLE | WQ_UNBOUND, 1);
     
     if (!wq)
         return -ENOMEM;
