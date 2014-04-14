@@ -2373,7 +2373,6 @@ static int dvb_dmxdev_section_callback(const u8 *buffer1, size_t buffer1_len,
 					      buffer2_len);
 
 	if (ret < 0) {
-		dvb_dmxdev_flush_events(&dmxdevfilter->events);
 		dmxdevfilter->buffer.error = ret;
 
 		event.type = DMX_EVENT_BUFFER_OVERFLOW;
@@ -2737,7 +2736,6 @@ static int dvb_dmxdev_ts_event_cb(struct dmx_ts_feed *feed,
 		dprintk("dmxdev: buffer overflow\n");
 
 		buffer->error = -EOVERFLOW;
-		dvb_dmxdev_flush_events(events);
 		event.type = DMX_EVENT_BUFFER_OVERFLOW;
 		dvb_dmxdev_add_event(&dmxdevfilter->events, &event);
 
