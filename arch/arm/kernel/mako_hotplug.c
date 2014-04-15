@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Francisco Franco <franciscofranco.1990@gmail.com>. 
+ * Copyright (c) 2013, Francisco Franco <franciscofranco.1990@gmail.com>.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -55,39 +55,39 @@ static struct cpu_stats
 
 struct hotplug_tunables
 {
-	/* 
-	 * system load threshold to decide when online or offline cores 
+	/*
+	 * system load threshold to decide when online or offline cores
 	 * from 0 to 100
 	 */
 	unsigned int load_threshold;
 
-	/* 
+	/*
 	 * counter to filter online/offline calls. The load needs to be above
 	 * load_threshold X high_load_counter times for the cores to go online
 	 * otherwise they stay offline
 	 */
 	unsigned int high_load_counter;
 
-	/* 
+	/*
 	 * max number of samples counters allowed to be counted. The higher the
 	 * value the longer it will take the driver to offline cores after a period
 	 * of high and continuous load
 	 */
 	unsigned int max_load_counter;
 
-	/* 
-	 * if the current CPU freq is above this limit don't offline the cores 
+	/*
+	 * if the current CPU freq is above this limit don't offline the cores
 	 * for a couple of extra samples
 	 */
 	unsigned int cpufreq_unplug_limit;
 
-	/* 
+	/*
 	 * minimum time in seconds that a core stays online to avoid too many
 	 * online/offline calls
 	 */
 	unsigned int min_time_cpu_online;
 
-	/* 
+	/*
 	 * sample timer in seconds. The default value of 1 equals to 10 samples
 	 * every second. The higher the value the less samples per second it runs
 	 */
@@ -102,8 +102,8 @@ struct cpu_load_data {
 static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
 
 static struct workqueue_struct *wq;
-static struct delayed_work decide_hotplug, resume;
-static struct work_struct suspend;
+static struct delayed_work decide_hotplug;
+static struct work_struct suspend, resume;
 
 static inline int get_cpu_load(unsigned int cpu)
 {
@@ -186,8 +186,8 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 	if (unlikely(!t->load_threshold && nr_online_cpus == num_possible_cpus()))
 		goto reschedule;
 
-    for_each_online_cpu(cpu) 
-    {
+	for_each_online_cpu(cpu)
+	{
 		cur_load = get_cpu_load(cpu);
 
 		if (cur_load >= t->load_threshold)
@@ -195,10 +195,10 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 			if (likely(stats.counter[cpu] < t->max_load_counter))
 				stats.counter[cpu] += 2;
 
-			if (cpu_is_offline(cpu_nr) 
+			if (cpu_is_offline(cpu_nr)
 					&& stats.counter[cpu] >= t->high_load_counter)
 				cpu_revive(cpu_nr);
-		}
+			}
 
 		else
 		{
@@ -207,7 +207,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 
 			if (cpu_online(cpu_nr) && stats.counter[cpu] < t->high_load_counter)
 			{
-				/* 
+				/*
 				 * offline the cpu only if its freq is lower than
 				 * CPUFREQ_UNPLUG_LIMIT. Else fill the counter so that this cpu
 				 * stays online at least 5 more samples (time depends on the
@@ -234,7 +234,8 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 	}
 
 reschedule:
-    queue_delayed_work_on(0, wq, &decide_hotplug, msecs_to_jiffies(t->timer * HZ));
+	queue_delayed_work_on(0, wq, &decide_hotplug,
+		msecs_to_jiffies(t->timer * HZ));
 }
 
 static void mako_hotplug_suspend(struct work_struct *work)
@@ -266,10 +267,10 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 }
 
 static int lcd_notifier_callback(struct notifier_block *this,
-									unsigned long event, void *data)
+	unsigned long event, void *data)
 {
 	if (event == LCD_EVENT_ON_START)
-		queue_delayed_work_on(0, wq, &resume, HZ);
+		queue_work_on(0, wq, &resume);
 	else if (event == LCD_EVENT_OFF_START)
 		queue_work_on(0, wq, &suspend);
 
@@ -280,155 +281,155 @@ static int lcd_notifier_callback(struct notifier_block *this,
  * Sysfs get/set entries start
  */
 
-static ssize_t load_threshold_show(struct device *dev, 
+static ssize_t load_threshold_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    return sprintf(buf, "%u\n", t->load_threshold);
+	return sprintf(buf, "%u\n", t->load_threshold);
 }
 
-static ssize_t load_threshold_store(struct device *dev, 
+static ssize_t load_threshold_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    unsigned int new_val;
-    
+	unsigned int new_val;
+
 	sscanf(buf, "%u", &new_val);
-    
-    if (new_val != t->load_threshold && new_val >= 0 && new_val <= 100)
-    {
-        t->load_threshold = new_val;
-    }
-    
-    return size;
+
+	if (new_val != t->load_threshold && new_val >= 0 && new_val <= 100)
+	{
+		t->load_threshold = new_val;
+	}
+
+	return size;
 }
 
-static ssize_t high_load_counter_show(struct device *dev, 
+static ssize_t high_load_counter_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    return sprintf(buf, "%u\n", t->high_load_counter);
+	return sprintf(buf, "%u\n", t->high_load_counter);
 }
 
-static ssize_t high_load_counter_store(struct device *dev, 
+static ssize_t high_load_counter_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    unsigned int new_val;
-    
+	unsigned int new_val;
+
 	sscanf(buf, "%u", &new_val);
-    
-    if (new_val != t->high_load_counter && new_val >= 0 && new_val <= 50)
-    {
-        t->high_load_counter = new_val;
-    }
-    
-    return size;
+
+	if (new_val != t->high_load_counter && new_val >= 0 && new_val <= 50)
+	{
+		t->high_load_counter = new_val;
+	}
+
+	return size;
 }
 
-static ssize_t max_load_counter_show(struct device *dev, 
+static ssize_t max_load_counter_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    return sprintf(buf, "%u\n", t->max_load_counter);
+	return sprintf(buf, "%u\n", t->max_load_counter);
 }
 
-static ssize_t max_load_counter_store(struct device *dev, 
+static ssize_t max_load_counter_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    unsigned int new_val;
-    
+	unsigned int new_val;
+
 	sscanf(buf, "%u", &new_val);
-    
-    if (new_val != t->max_load_counter && new_val >= 0 && new_val <= 50)
-    {
-        t->max_load_counter = new_val;
-    }
-    
-    return size;
+
+	if (new_val != t->max_load_counter && new_val >= 0 && new_val <= 50)
+	{
+		t->max_load_counter = new_val;
+	}
+
+	return size;
 }
 
-static ssize_t cpufreq_unplug_limit_show(struct device *dev, 
+static ssize_t cpufreq_unplug_limit_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    return sprintf(buf, "%u\n", t->cpufreq_unplug_limit);
+	return sprintf(buf, "%u\n", t->cpufreq_unplug_limit);
 }
 
-static ssize_t cpufreq_unplug_limit_store(struct device *dev, 
+static ssize_t cpufreq_unplug_limit_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    unsigned int new_val;
-    
+	unsigned int new_val;
+
 	sscanf(buf, "%u", &new_val);
-    
-    if (new_val != t->cpufreq_unplug_limit && 
-			new_val >= 0 && new_val <= UINT_MAX)
-    {
-        t->cpufreq_unplug_limit = new_val;
-    }
-    
-    return size;
+
+	if (new_val != t->cpufreq_unplug_limit &&
+		new_val >= 0 && new_val <= UINT_MAX)
+	{
+		t->cpufreq_unplug_limit = new_val;
+	}
+
+	return size;
 }
 
-static ssize_t min_time_cpu_online_show(struct device *dev, 
+static ssize_t min_time_cpu_online_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    return sprintf(buf, "%u\n", t->min_time_cpu_online);
+	return sprintf(buf, "%u\n", t->min_time_cpu_online);
 }
 
-static ssize_t min_time_cpu_online_store(struct device *dev, 
+static ssize_t min_time_cpu_online_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t size)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    unsigned int new_val;
-    
+	unsigned int new_val;
+
 	sscanf(buf, "%u", &new_val);
-    
-    if (new_val != t->min_time_cpu_online && new_val >= 0 && new_val <= 100)
-    {
-        t->min_time_cpu_online = new_val;
-    }
-    
-    return size;
+
+	if (new_val != t->min_time_cpu_online && new_val >= 0 && new_val <= 100)
+	{
+		t->min_time_cpu_online = new_val;
+	}
+
+	return size;
 }
 
-static ssize_t timer_show(struct device *dev, struct device_attribute *attr, 
+static ssize_t timer_show(struct device *dev, struct device_attribute *attr,
 		char *buf)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    return sprintf(buf, "%u\n", t->timer);
+	return sprintf(buf, "%u\n", t->timer);
 }
 
-static ssize_t timer_store(struct device *dev, struct device_attribute *attr, 
+static ssize_t timer_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t size)
 {
 	struct hotplug_tunables *t = &tunables;
 
-    unsigned int new_val;
-    
+	unsigned int new_val;
+
 	sscanf(buf, "%u", &new_val);
-    
-    if (new_val != t->timer && new_val >= 0 && new_val <= 100)
-    {
-        t->timer = new_val;
-    }
-    
-    return size;
+
+	if (new_val != t->timer && new_val >= 0 && new_val <= 100)
+	{
+		t->timer = new_val;
+	}
+
+	return size;
 }
 
 static DEVICE_ATTR(load_threshold, 0664, load_threshold_show, load_threshold_store);
@@ -474,7 +475,7 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	struct hotplug_tunables *t = &tunables;
 
 	wq = alloc_workqueue("mako_hotplug_workqueue", WQ_FREEZABLE, 1);
-    
+
 	if (!wq)
 	{
 		ret = -ENOMEM;
@@ -511,21 +512,21 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 			&mako_hotplug_control_group);
 
 	if (ret)
-    {
+	{
 		ret = -EINVAL;
 		goto err;
 	}
 
+	INIT_WORK(&resume, mako_hotplug_resume);
 	INIT_WORK(&suspend, mako_hotplug_suspend);
-	INIT_DELAYED_WORK(&resume, mako_hotplug_resume);
 	INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
 
 	queue_delayed_work_on(0, wq, &decide_hotplug, HZ * 20);
-    
+
 	return ret;
 
 err:
-	return ret;	
+	return ret;
 }
 
 static struct platform_device mako_hotplug_device = {
