@@ -234,12 +234,6 @@ void __init msm8974_init(void)
 	if (socinfo_init() < 0)
 		pr_err("%s: socinfo_init() failed\n", __func__);
 
-	/*
-	 * disable the uart console
-	 * it will be enabled if detected earjack debugger
-	 */
-	msm_console_set_enable(false);
-
 	msm_8974_init_gpiomux();
 	regulator_has_full_constraints();
 	board_dt_populate(adata);
