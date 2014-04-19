@@ -27,9 +27,7 @@
 #include <linux/delay.h>
 #include <linux/input.h>
 #include <linux/jiffies.h>
-
 #include <linux/lcd_notify.h>
-
 
 #define MAKO_HOTPLUG "mako_hotplug"
 
@@ -41,6 +39,7 @@
 #define DEFAULT_TIMER 1
 
 #define MIN_CPU_UP_US 1000 * USEC_PER_MSEC;
+#define NUM_POSSIBLE_CPUS num_possible_cpus()
 
 extern bool boosted;
 
@@ -94,42 +93,9 @@ struct hotplug_tunables
 	unsigned int timer;
 } tunables;
 
-struct cpu_load_data {
-	u64 prev_cpu_idle;
-	u64 prev_cpu_wall;
-};
-
-static DEFINE_PER_CPU(struct cpu_load_data, cpuload);
-
 static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 static struct work_struct suspend, resume;
-
-static inline int get_cpu_load(unsigned int cpu)
-{
-	struct cpu_load_data *pcpu = &per_cpu(cpuload, cpu);
-	struct cpufreq_policy policy;
-	u64 cur_wall_time, cur_idle_time;
-	unsigned int idle_time, wall_time;
-	unsigned int cur_load;
-
-	cpufreq_get_policy(&policy, cpu);
-
-	cur_idle_time = get_cpu_idle_time(cpu, &cur_wall_time, true);
-
-	wall_time = (unsigned int) (cur_wall_time - pcpu->prev_cpu_wall);
-	pcpu->prev_cpu_wall = cur_wall_time;
-
-	idle_time = (unsigned int) (cur_idle_time - pcpu->prev_cpu_idle);
-	pcpu->prev_cpu_idle = cur_idle_time;
-
-	if (unlikely(!wall_time || wall_time < idle_time))
-		return 0;
-
-	cur_load = 100 * (wall_time - idle_time) / wall_time;
-
-	return (cur_load * policy.cur) / policy.max;
-}
 
 static void cpu_revive(unsigned int cpu)
 {
@@ -159,8 +125,7 @@ static void cpu_smash(unsigned int cpu)
 
 static void __ref decide_hotplug_func(struct work_struct *work)
 {
-	int cpu;
-	int cpu_nr = 2;
+	unsigned int cpu, cpu_nr;
 	unsigned int cur_load;
 	unsigned int freq_buf;
 	unsigned int nr_online_cpus = num_online_cpus();
@@ -183,12 +148,19 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 	/*
 	 * reschedule early when users to run with all cores online
 	 */
-	if (unlikely(!t->load_threshold && nr_online_cpus == num_possible_cpus()))
+	if (unlikely(!t->load_threshold && nr_online_cpus == NUM_POSSIBLE_CPUS))
 		goto reschedule;
 
-	for_each_online_cpu(cpu)
+	for (cpu = 0, cpu_nr = 2; cpu < 2; cpu++, cpu_nr++)
 	{
-		cur_load = get_cpu_load(cpu);
+		/*
+		 * just in case there's a race between screen on and this thread and
+		 * cpu1 is still waking up
+		 */
+		if (cpu && cpu_is_offline(cpu))
+			goto reschedule;
+
+		cur_load = cpufreq_quick_get_util(cpu);
 
 		if (cur_load >= t->load_threshold)
 		{
@@ -226,11 +198,6 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 					cpu_smash(cpu_nr);
 			}
 		}
-
-		cpu_nr++;
-
-		if (cpu)
-			break;
 	}
 
 reschedule:
@@ -522,8 +489,6 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
 
 	queue_delayed_work_on(0, wq, &decide_hotplug, HZ * 20);
-
-	return ret;
 
 err:
 	return ret;
