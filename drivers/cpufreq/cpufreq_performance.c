@@ -15,6 +15,7 @@
 #include <linux/cpufreq.h>
 #include <linux/init.h>
 
+#define LOAD 100
 
 static int cpufreq_governor_performance(struct cpufreq_policy *policy,
 					unsigned int event)
@@ -26,6 +27,7 @@ static int cpufreq_governor_performance(struct cpufreq_policy *policy,
 						policy->max, event);
 		__cpufreq_driver_target(policy, policy->max,
 						CPUFREQ_RELATION_H);
+		cpufreq_notify_utilization(policy, LOAD);
 		break;
 	default:
 		break;
