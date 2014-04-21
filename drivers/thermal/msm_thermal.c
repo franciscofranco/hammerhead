@@ -57,7 +57,7 @@ static int  msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 
 	if (event != CPUFREQ_ADJUST)
 		return 0;
-		
+
 	cpufreq_verify_within_limits(policy, cpu_stats.policy.cpuinfo.min_freq,
 		cpu_stats.limited_max_freq);
 
@@ -70,13 +70,13 @@ static struct notifier_block msm_thermal_cpufreq_notifier = {
 
 static void limit_cpu_freqs(uint32_t max_freq)
 {
-    int cpu;
+	int cpu;
 
 	if (cpu_stats.limited_max_freq == max_freq)
 		return;
 
 	cpu_stats.limited_max_freq = max_freq;
-    
+
 	/* Update new limits */
 	get_online_cpus();
 	for_each_online_cpu(cpu)
@@ -92,23 +92,22 @@ static void check_temp(struct work_struct *work)
 {
 	struct tsens_device tsens_dev;
 	long temp = 0;
-	uint32_t freq;
-    
+	uint32_t freq = 0;
+
 	tsens_dev.sensor_num = msm_thermal_info.sensor_id;
 	tsens_get_temp(&tsens_dev, &temp);
 
 	cpufreq_get_policy(&cpu_stats.policy, 0);
 
 	/* most of the time the device is not hot so reschedule early */
-	if (likely(temp < temp_threshold))
+	if (cpu_stats.throttling)
 	{
-		if (unlikely(cpu_stats.throttling))
+		if (temp < temp_threshold)
 		{
 			limit_cpu_freqs(cpu_stats.policy.cpuinfo.max_freq);
 			cpu_stats.throttling = false;
+			goto reschedule;
 		}
-
-		goto reschedule;
 	}
 
 	if (temp >= (temp_threshold + 12))
@@ -117,36 +116,38 @@ static void check_temp(struct work_struct *work)
 		freq = cpu_stats.thermal_steps[1];
 	else if (temp >= (temp_threshold + 5))
 		freq = cpu_stats.thermal_steps[2];
-	else
+	else if (temp > temp_threshold)
 		freq = cpu_stats.thermal_steps[3];
 
-	limit_cpu_freqs(freq);
-
-	cpu_stats.throttling = true;
+	if (freq)
+	{
+		limit_cpu_freqs(freq);
+		cpu_stats.throttling = true;
+	}
 
 reschedule:
-	queue_delayed_work(wq, &check_temp_work, msecs_to_jiffies(250));
+	queue_delayed_work_on(0, wq, &check_temp_work, msecs_to_jiffies(250));
 }
 
 int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
 {
 	int ret = 0;
-    
+
 	BUG_ON(!pdata);
 	BUG_ON(pdata->sensor_id >= TSENS_MAX_SENSORS);
 	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
-    
-	wq = alloc_workqueue("msm_thermal_workqueue", WQ_FREEZABLE | WQ_UNBOUND, 1);
-    
-    if (!wq)
-        return -ENOMEM;
+
+	wq = alloc_workqueue("msm_thermal_workqueue", WQ_FREEZABLE, 1);
+
+	if (!wq)
+        	return -ENOMEM;
 
 	cpufreq_register_notifier(&msm_thermal_cpufreq_notifier,
 			CPUFREQ_POLICY_NOTIFIER);
-    
+
 	INIT_DELAYED_WORK(&check_temp_work, check_temp);
 	queue_delayed_work(wq, &check_temp_work, HZ*30);
-    
+
 	return ret;
 }
 
@@ -156,21 +157,21 @@ static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 	char *key = NULL;
 	struct device_node *node = pdev->dev.of_node;
 	struct msm_thermal_data data;
-    
+
 	memset(&data, 0, sizeof(struct msm_thermal_data));
 	key = "qcom,sensor-id";
 	ret = of_property_read_u32(node, key, &data.sensor_id);
 	if (ret)
 		goto fail;
 	WARN_ON(data.sensor_id >= TSENS_MAX_SENSORS);
-    
+
 fail:
 	if (ret)
 		pr_err("%s: Failed reading node=%s, key=%s\n",
 		       __func__, node->full_name, key);
 	else
 		ret = msm_thermal_init(&data);
-    
+
 	return ret;
 }
 
