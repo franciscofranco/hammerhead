@@ -71,3 +71,4 @@ config F2FS_CHECK_FS
 	  Enables BUG_ONs which check the file system consistency in runtime.
 
 	  If you want to improve the performance, say N.
+
