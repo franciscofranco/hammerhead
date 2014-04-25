@@ -31,7 +31,7 @@
 
 #define MAKO_HOTPLUG "mako_hotplug"
 
-#define DEFAULT_LOAD_THRESHOLD 60
+#define DEFAULT_LOAD_THRESHOLD 70
 #define DEFAULT_HIGH_LOAD_COUNTER 10
 #define DEFAULT_MAX_LOAD_COUNTER 20
 #define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1000000
@@ -165,7 +165,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 		if (cur_load >= t->load_threshold)
 		{
 			if (likely(stats.counter[cpu] < t->max_load_counter))
-				stats.counter[cpu] += 2;
+				++stats.counter[cpu];
 
 			if (cpu_is_offline(cpu_nr)
 					&& stats.counter[cpu] >= t->high_load_counter)
