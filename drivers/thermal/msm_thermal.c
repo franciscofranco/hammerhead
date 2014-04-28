@@ -37,7 +37,7 @@ static struct cpus {
 	.limited_max_freq = UINT_MAX,
 };
 
-unsigned int temp_threshold = 60;
+unsigned int temp_threshold = 70;
 module_param(temp_threshold, int, 0755);
 
 static struct msm_thermal_data msm_thermal_info;
