@@ -189,7 +189,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 
 				freq_buf = policy.min;
 
-				if (policy.min > t->cpufreq_unplug_limit)
+				if (t->cpufreq_unplug_limit > freq_buf)
 					freq_buf = t->cpufreq_unplug_limit;
 
 				if (policy.cur > freq_buf && !boosted)
