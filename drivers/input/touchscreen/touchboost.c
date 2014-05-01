@@ -17,6 +17,7 @@
 #include <linux/init.h>
 #include <linux/notifier.h>
 #include <linux/cpufreq.h>
+#include <linux/cpu.h>
 #include <linux/sched.h>
 #include <linux/jiffies.h>
 #include <linux/kthread.h>
@@ -188,7 +189,7 @@ static void boost_input_disconnect(struct input_handle *handle)
 	kfree(handle);
 }
 
-static const struct input_device_id cpuboost_ids[] = {
+static const struct input_device_id boost_ids[] = {
 	/* multi-touch touchscreen */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
