@@ -143,9 +143,9 @@ extern u64 last_input_time;
  * sync_freq
  */
 
-static unsigned int up_threshold_any_cpu_load = 85;
+static unsigned int up_threshold_any_cpu_load = 50;
 static unsigned int sync_freq = CPU_SYNC_FREQ;
-static unsigned int up_threshold_any_cpu_freq = 1036800;
+static unsigned int up_threshold_any_cpu_freq = 1267200;
 
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
