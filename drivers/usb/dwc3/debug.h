@@ -46,7 +46,6 @@ extern void dbg_queue(u8, const struct usb_request*, int);
 extern void dbg_setup(u8, const struct usb_ctrlrequest*);
 extern int dwc3_debugfs_init(struct dwc3 *);
 extern void dwc3_debugfs_exit(struct dwc3 *);
-extern void dbg_print_reg(const char *name, int reg);
 #else
 static inline void dbg_event(u8 ep_num, const char *name, int status)
 {  }
@@ -59,8 +58,6 @@ static inline void dbg_queue(u8 ep_num, const struct usb_request *req,
 			     int status)
 {  }
 static inline void dbg_setup(u8 ep_num, const struct usb_ctrlrequest *req)
-{  }
-static inline void dbg_print_reg(const char *name, int reg)
 {  }
 static inline int dwc3_debugfs_init(struct dwc3 *d)
 {  return 0;  }
