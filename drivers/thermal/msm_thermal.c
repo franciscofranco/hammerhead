@@ -31,10 +31,12 @@ static struct cpus {
 	uint32_t limited_max_freq;
 	unsigned int max_freq;
 	struct cpufreq_policy policy;
+	unsigned int safe_diff;
 } cpu_stats = {
 	.throttling = false,
 	.thermal_steps = {729600, 1036800, 1267200, 1497600},
 	.limited_max_freq = UINT_MAX,
+	.safe_diff = 5,
 };
 
 unsigned int temp_threshold = 70;
@@ -102,7 +104,7 @@ static void check_temp(struct work_struct *work)
 	/* most of the time the device is not hot so reschedule early */
 	if (cpu_stats.throttling)
 	{
-		if (temp < temp_threshold)
+		if (temp <= (temp_threshold - cpu_stats.safe_diff))
 		{
 			limit_cpu_freqs(cpu_stats.policy.cpuinfo.max_freq);
 			cpu_stats.throttling = false;
