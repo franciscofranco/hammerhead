@@ -1280,7 +1280,7 @@ int mdss_mdp_pp_resume(struct mdss_mdp_ctl *ctl, u32 dspp_num)
 static struct mdp_ar_gc_lut_data test_r[GC_LUT_SEGMENTS] =
 {
         {0x00000000, 0x00000000, 0x00000000},
-        {0x00000002, 0x000000FF, 0x00000010},
+        {0x00000001, 0x000000FF, 0x00000010},
         {0x00000FFF, 0x00000000, 0x00007F80},
         {0x00000000, 0x00000000, 0x00000000},
         {0x00000000, 0x00000000, 0x00000000},
@@ -1300,7 +1300,7 @@ static struct mdp_ar_gc_lut_data test_r[GC_LUT_SEGMENTS] =
 static struct mdp_ar_gc_lut_data test_g[GC_LUT_SEGMENTS] =
 {
         {0x00000000, 0x00000000, 0x00000000},
-        {0x00000002, 0x000000FF, 0x00000010},
+        {0x00000001, 0x000000FF, 0x00000010},
         {0x00000FFF, 0x00000000, 0x00007F80},
         {0x00000000, 0x00000000, 0x00000000},
         {0x00000000, 0x00000000, 0x00000000},
@@ -1320,7 +1320,7 @@ static struct mdp_ar_gc_lut_data test_g[GC_LUT_SEGMENTS] =
 static struct mdp_ar_gc_lut_data test_b[GC_LUT_SEGMENTS] =
 {
         {0x00000000, 0x00000000, 0x00000000},
-        {0x00000002, 0x000000FF, 0x00000010},
+        {0x00000001, 0x000000FF, 0x00000010},
         {0x00000FFF, 0x00000000, 0x00007F80},
         {0x00000000, 0x00000000, 0x00000000},
         {0x00000000, 0x00000000, 0x00000000},
@@ -1378,10 +1378,9 @@ void mdss_mdp_pp_argc(void)
 #define MAX_KCAL_V (NUM_QLUT-1)
 
 #define SCALED_BY_KCAL(rgb, kcal) \
-	(((((unsigned int)(rgb) * (unsigned int)(kcal)) << 10) / \
-						(unsigned int)MAX_KCAL_V) >> 10)
+	((rgb * kcal * NUM_QLUT ) / (MAX_KCAL_V * MAX_KCAL_V))
 
-void mdss_mdp_pp_argc_kcal(int kr, int kg, int kb)//struct mdss_mdp_ctl *ctl,
+void mdss_mdp_pp_argc_kcal(int kr, int kg, int kb)
 {
 	int i;
 	int disp_num = 0;
@@ -1406,7 +1405,6 @@ void mdss_mdp_pp_argc_kcal(int kr, int kg, int kb)//struct mdss_mdp_ctl *ctl,
 	pgc_config = &mdss_pp_res->pgc_disp_cfg[disp_num];
 	pgc_config->flags |= MDP_PP_OPS_WRITE;
 	pgc_config->flags |= MDP_PP_OPS_ENABLE;
-	//mdss_mdp_pp_setup(ctl);
 	mdss_pp_res->pp_disp_flags[disp_num] |= PP_FLAGS_DIRTY_PGC;
 
 	pr_info(">>>>> %s \n", __func__);
