@@ -537,7 +537,7 @@ static int dwc3_otg_set_power(struct usb_phy *phy, unsigned mA)
 
 	ac_psy = power_supply_get_by_name("ac");
 
-	if (dotg->charger->chg_type == DWC3_DCP_CHARGER && ac_psy) {
+	if ((dotg->charger->chg_type == DWC3_DCP_CHARGER || dotg->charger->chg_type == DWC3_PROPRIETARY_CHARGER) && ac_psy) {
 		pr_info("%s: override dotg->psy to ac->psy\n", __func__);
 		saved_usb_psy = dotg->psy;
 		dotg->psy = ac_psy;
