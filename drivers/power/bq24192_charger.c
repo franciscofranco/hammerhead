@@ -317,7 +317,6 @@ static int bq24192_set_input_i_limit(struct bq24192_chip *chip, int ma)
 {
 	int i;
 	u8 temp;
-	int new_ma = ma;
 
 	if (ma < INPUT_CURRENT_LIMIT_MIN_MA
 			|| ma > INPUT_CURRENT_LIMIT_MAX_MA) {
@@ -334,28 +333,20 @@ static int bq24192_set_input_i_limit(struct bq24192_chip *chip, int ma)
 		pr_err("can't find %d in icl_ma_table. Use min.\n", ma);
 		i = 0;
 	}
+	
+	temp = icl_ma_table[i].value;
 
-	if (force_fast_charge)
-	{
-		new_ma = 1200;
-		temp = icl_ma_table[4].value;
-	}
-	else
-	{
-		temp = icl_ma_table[i].value;
-	}
-
-	if (new_ma > chip->max_input_i_ma) {
-		chip->saved_input_i_ma = new_ma;
-		pr_debug("reject %d mA due to therm mitigation\n", new_ma);
+	if (ma > chip->max_input_i_ma) {
+		chip->saved_input_i_ma = ma;
+		pr_debug("reject %d mA due to therm mitigation\n", ma);
 		return 0;
 	}
 
 	if (!chip->therm_mitigation)
-		chip->saved_input_i_ma = new_ma;
+		chip->saved_input_i_ma = ma;
 
 	chip->therm_mitigation = false;
-	pr_debug("input current limit = %d setting 0x%02x\n", new_ma, temp);
+	pr_debug("input current limit = %d setting 0x%02x\n", ma, temp);
 	return bq24192_masked_write(chip->client, INPUT_SRC_CONT_REG,
 			INPUT_CURRENT_LIMIT_MASK, temp);
 }
