@@ -75,7 +75,7 @@ static unsigned int hispeed_freq = 1036800;
 static unsigned long go_hispeed_load = DEFAULT_GO_HISPEED_LOAD;
 
 /* Sampling down factor to be applied to min_sample_time at max freq */
-#define DEFAULT_SAMPLING_DOWN_FACTOR 120000
+#define DEFAULT_SAMPLING_DOWN_FACTOR 60000
 static unsigned int sampling_down_factor = DEFAULT_SAMPLING_DOWN_FACTOR;
 
 /* Target load.  Lower values result in higher CPU speeds. */
@@ -121,7 +121,7 @@ bool boosted;
  * Max additional time to wait in idle, beyond timer_rate, at speeds above
  * minimum before wakeup to reduce speed, or -1 if unnecessary.
  */
-#define DEFAULT_TIMER_SLACK (70000)
+#define DEFAULT_TIMER_SLACK (30000)
 static int timer_slack_val = DEFAULT_TIMER_SLACK;
 
 static bool io_is_busy = true;
@@ -143,9 +143,9 @@ extern u64 last_input_time;
  * sync_freq
  */
 
-static unsigned int up_threshold_any_cpu_load = 50;
+static unsigned int up_threshold_any_cpu_load = 65;
 static unsigned int sync_freq = CPU_SYNC_FREQ;
-static unsigned int up_threshold_any_cpu_freq = 1267200;
+static unsigned int up_threshold_any_cpu_freq = 1190400;
 
 
 static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
