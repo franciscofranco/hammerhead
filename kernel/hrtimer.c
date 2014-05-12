@@ -1008,8 +1008,6 @@ int __hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
 	/* Switch the timer base, if necessary: */
 	new_base = switch_hrtimer_base(timer, base, mode & HRTIMER_MODE_PINNED);
 
-	timer_stats_hrtimer_set_start_info(timer);
-
 	leftmost = enqueue_hrtimer(timer, new_base);
 
 	/*
