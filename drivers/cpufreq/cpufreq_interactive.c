@@ -1007,7 +1007,7 @@ static ssize_t show_min_sample_time(struct kobject *kobj,
 		ret += sprintf(buf + ret, "%u%s", min_sample_times[i],
 			       i & 0x1 ? ":" : " ");
 
-	ret += sprintf(buf + --ret, "\n");
+	sprintf(buf + ret - 1, "\n");
 	spin_unlock_irqrestore(&min_sample_time_lock, flags);
 	return ret;
 }
@@ -1049,7 +1049,7 @@ static ssize_t show_timer_rate(struct kobject *kobj,
 		ret += sprintf(buf + ret, "%u%s", timer_rates[i],
 			       i & 0x1 ? ":" : " ");
 
-	ret += sprintf(buf + --ret, "\n");
+	sprintf(buf + ret - 1, "\n");
 	spin_unlock_irqrestore(&timer_rate_lock, flags);
 	return ret;
 }
@@ -1115,7 +1115,7 @@ static ssize_t show_timer_slack(
 		ret += sprintf(buf + ret, "%d%s", timer_slack_vals[i],
 			       i & 0x1 ? ":" : " ");
 
-	ret += sprintf(buf + --ret, "\n");
+	sprintf(buf + ret - 1, "\n");
 	spin_unlock_irqrestore(&timer_slack_lock, flags);
 	return ret;
 }
