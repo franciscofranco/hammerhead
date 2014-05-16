@@ -1551,7 +1551,8 @@ void update_task_ravg(struct task_struct *p, struct rq *rq, int update_sum)
 			if (!update_sum)
 				p->ravg.window_start = wallclock;
 			else
-				p->ravg.window_start += n * window_size;
+				p->ravg.window_start += (u64)n *
+							 (u64)window_size;
 			BUG_ON(p->ravg.window_start > wallclock);
 			if (update_sum)
 				update_history(rq, p, window_size, n);
