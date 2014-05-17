@@ -828,15 +828,20 @@ static int thread_migration_notify(struct notifier_block *nb,
 	struct cpufreq_interactive_cpuinfo *target, *source;
 	target = &per_cpu(cpuinfo, target_cpu);
 	source = &per_cpu(cpuinfo, (int)arg);
-	
+
+	/*
+	 * If there's a thread migration in the same core we don't want to
+	 * boost it
+	 */
+	if ((int)arg == target_cpu)
+		return NOTIFY_OK;
+
 	if (source->policy->cur > target->policy->cur)
 	{
-		if (source->policy->cur < boost_freq)
+		if (source->policy->cur > boost_freq)
 			boost_freq = source->policy->cur;
 
 		target->target_freq = boost_freq;
-		target->floor_freq = boost_freq;
-		target->floor_validate_time = ktime_to_us(ktime_get());
 
 		spin_lock_irqsave(&speedchange_cpumask_lock, flags);
 		cpumask_set_cpu(target_cpu, &speedchange_cpumask);
@@ -1100,11 +1105,11 @@ static ssize_t store_input_boost_freq(struct kobject *kobj, struct attribute *at
 {
 	int ret;
 	unsigned long val;
-    
+
 	ret = strict_strtoul(buf, 0, &val);
 	if (ret < 0)
 		return ret;
-    
+
 	input_boost_freq = val;
 	return count;
 
