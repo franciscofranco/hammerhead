@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Francisco Franco <franciscofranco.1990@gmail.com>.
+ * Copyright (c) 2013-2014, Francisco Franco <franciscofranco.1990@gmail.com>.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,21 +34,22 @@
 #define DEFAULT_LOAD_THRESHOLD 70
 #define DEFAULT_HIGH_LOAD_COUNTER 10
 #define DEFAULT_MAX_LOAD_COUNTER 20
-#define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1000000
+#define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1500000
 #define DEFAULT_MIN_TIME_CPU_ONLINE 1
 #define DEFAULT_TIMER 1
 
 #define MIN_CPU_UP_US 1000 * USEC_PER_MSEC;
 #define NUM_POSSIBLE_CPUS num_possible_cpus()
-#define MAX_LOAD 100
+#define HIGH_LOAD 95
 
 extern bool boosted;
 
-static struct cpu_stats
+struct cpu_stats
 {
+	unsigned int online_cpus;
 	unsigned int counter[2];
-	u64 timestamp[2];
 	struct notifier_block notif;
+	u64 timestamp[2];
 } stats = {
 	.counter = {0},
 };
@@ -98,16 +99,41 @@ static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 static struct work_struct suspend, resume;
 
-static void cpu_revive(unsigned int cpu)
+static void cpu_revive(unsigned int cpu, unsigned int load)
 {
-	cpu_up(cpu);
-	stats.timestamp[cpu - 2] = ktime_to_us(ktime_get());
+	struct hotplug_tunables *t = &tunables;
+
+	/*
+	 * we should care about a very high load spike and online the
+	 * cpu in question. If the device is under stress for at least 200ms
+	 * online the cpu, no questions asked. 200ms here equals two samples
+	 */
+	if (load >= HIGH_LOAD && stats.counter[cpu - 2] >= 2)
+	{
+		cpu_up(cpu);
+	}
+	else if (stats.counter[cpu - 2] >= t->high_load_counter)
+	{
+		cpu_up(cpu);
+		stats.timestamp[cpu - 2] = ktime_to_us(ktime_get());
+	}
+
+	stats.online_cpus = num_online_cpus();
 }
 
 static void cpu_smash(unsigned int cpu)
 {
 	struct hotplug_tunables *t = &tunables;
 	u64 extra_time = MIN_CPU_UP_US;
+
+	/*
+	 * offline the cpu only if its freq is lower than
+	 * CPUFREQ_UNPLUG_LIMIT. Else update the timestamp to now and
+	 * postpone the cpu offline process to at least another second
+	 */
+	if (cpufreq_quick_get(cpu) >= t->cpufreq_unplug_limit
+			&& !boosted)
+		stats.timestamp[cpu - 2] = ktime_to_us(ktime_get());
 
 	/*
 	 * Let's not unplug this cpu unless its been online for longer than
@@ -120,87 +146,63 @@ static void cpu_smash(unsigned int cpu)
 	if (ktime_to_us(ktime_get()) < stats.timestamp[cpu - 2] + extra_time)
 		return;
 
+	if (stats.counter[cpu - 2] >= t->high_load_counter)
+		return;
+
 	cpu_down(cpu);
+
+	stats.online_cpus = num_online_cpus();
+
+	/*
+	 * reset the counter yo
+	 */
 	stats.counter[cpu - 2] = 0;
 }
 
 static void __ref decide_hotplug_func(struct work_struct *work)
 {
-	unsigned int cpu, cpu_nr;
+	unsigned int cpu;
 	unsigned int cur_load;
-	unsigned int nr_online_cpus = num_online_cpus();
 	struct hotplug_tunables *t = &tunables;
 
 	/*
 	 * reschedule early when the system has woken up from the FREEZER but the
 	 * display is not on
 	 */
-	if (unlikely(nr_online_cpus == 1))
+	if (unlikely(stats.online_cpus == 1))
 		goto reschedule;
 
 	/*
 	 * reschedule early when the user doesn't want more than 2 cores online
 	 */
-	if (unlikely(t->load_threshold == 100 && nr_online_cpus == 2))
+	if (unlikely(t->load_threshold == 100 && stats.online_cpus == 2))
 		goto reschedule;
 
 	/*
 	 * reschedule early when users to run with all cores online
 	 */
-	if (unlikely(!t->load_threshold && nr_online_cpus == NUM_POSSIBLE_CPUS))
+	if (unlikely(!t->load_threshold && stats.online_cpus == NUM_POSSIBLE_CPUS))
 		goto reschedule;
 
-	for (cpu = 0, cpu_nr = 2; cpu < 2; cpu++, cpu_nr++)
+	for (cpu = 0; cpu < 2; cpu++)
 	{
-		/*
-		 * just in case there's a race between screen on and this thread and
-		 * cpu1 is still waking up
-		 */
-		if (cpu && cpu_is_offline(cpu))
-			goto reschedule;
-
 		cur_load = cpufreq_quick_get_util(cpu);
 
 		if (cur_load >= t->load_threshold)
 		{
-			if (likely(stats.counter[cpu] < t->max_load_counter))
+			if (stats.counter[cpu] < t->max_load_counter)
 				++stats.counter[cpu];
 
-			if (cpu_is_offline(cpu_nr))
-			{
-				/*
-				 * we should care about a very high load spike and online the
-				 * cpu in question. Use the normal cpu_up function call instead
-				 * of the cpu_revive wrapper because we don't want the core to
-				 * go through the min_time_cpu_online in this specific case.
-				 * If the load is continously high this driver will not unplug
-				 * it
-				 */
-				if (cur_load >= MAX_LOAD)
-					cpu_up(cpu_nr);
-				else if (stats.counter[cpu] >= t->high_load_counter)
-					cpu_revive(cpu_nr);
-			}
+			if (stats.online_cpus < NUM_POSSIBLE_CPUS)
+				cpu_revive(stats.online_cpus, cur_load);
 		}
 		else
 		{
 			if (stats.counter[cpu])
 				--stats.counter[cpu];
 
-			if (cpu_online(cpu_nr) && stats.counter[cpu] < t->high_load_counter)
-			{
-				/*
-				 * offline the cpu only if its freq is lower than
-				 * CPUFREQ_UNPLUG_LIMIT. Else fill the counter so that this cpu
-				 * stays online at least 5 more samples (time depends on the
-				 * sample timer period)
-				 */
-				if (cpufreq_quick_get(cpu_nr) >= t->cpufreq_unplug_limit
-						&& !boosted)
-					stats.counter[cpu] = t->high_load_counter + 5;
-				else
-					cpu_smash(cpu_nr);
-			}
+			if (stats.online_cpus > 2)
+				cpu_smash(stats.online_cpus - 1);
 		}
 	}
 
@@ -224,15 +226,24 @@ static void mako_hotplug_suspend(struct work_struct *work)
 		cpu_down(cpu);
 	}
 
+	stats.online_cpus = num_online_cpus();
+
 	pr_info("%s: suspend\n", MAKO_HOTPLUG);
 }
 
 static void __ref mako_hotplug_resume(struct work_struct *work)
 {
-	int cpu = 1;
+	int cpu;
 
-	if (cpu_is_offline(cpu))
+	for_each_possible_cpu(cpu)
+	{
+		if (!cpu)
+			continue;
+
 		cpu_up(cpu);
+	}
+
+	stats.online_cpus = num_online_cpus();
 
 	pr_info("%s: resume\n", MAKO_HOTPLUG);
 }
@@ -462,8 +473,8 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 
 	stats.timestamp[0] = ktime_to_us(ktime_get());
 	stats.timestamp[1] = ktime_to_us(ktime_get());
-
 	stats.notif.notifier_call = lcd_notifier_callback;
+	stats.online_cpus = num_online_cpus();
 
 	if (lcd_register_client(&stats.notif))
 	{
