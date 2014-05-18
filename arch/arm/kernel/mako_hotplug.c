@@ -40,6 +40,7 @@
 
 #define MIN_CPU_UP_US 1000 * USEC_PER_MSEC;
 #define NUM_POSSIBLE_CPUS num_possible_cpus()
+#define MAX_LOAD 100
 
 extern bool boosted;
 
@@ -165,11 +166,22 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 			if (likely(stats.counter[cpu] < t->max_load_counter))
 				++stats.counter[cpu];
 
-			if (cpu_is_offline(cpu_nr)
-					&& stats.counter[cpu] >= t->high_load_counter)
-				cpu_revive(cpu_nr);
+			if (cpu_is_offline(cpu_nr))
+			{
+				/*
+				 * we should care about a very high load spike and online the
+				 * cpu in question. Use the normal cpu_up function call instead
+				 * of the cpu_revive wrapper because we don't want the core to
+				 * go through the min_time_cpu_online in this specific case.
+				 * If the load is continously high this driver will not unplug
+				 * it
+				 */
+				if (cur_load >= MAX_LOAD)
+					cpu_up(cpu_nr);
+				else if (stats.counter[cpu] >= t->high_load_counter)
+					cpu_revive(cpu_nr);
 			}
-
+		}
 		else
 		{
 			if (stats.counter[cpu])
