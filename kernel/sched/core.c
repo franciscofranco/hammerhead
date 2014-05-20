@@ -6969,13 +6969,10 @@ match2:
 #if defined(CONFIG_SCHED_MC) || defined(CONFIG_SCHED_SMT)
 static void reinit_sched_domains(void)
 {
-	get_online_cpus();
-
 	/* Destroy domains first to force the rebuild */
 	partition_sched_domains(0, NULL, NULL);
 
 	rebuild_sched_domains();
-	put_online_cpus();
 }
 
 static ssize_t sched_power_savings_store(const char *buf, size_t count, int smt)
