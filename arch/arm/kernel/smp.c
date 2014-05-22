@@ -119,6 +119,18 @@ void __init smp_init_cpus(void)
 		smp_ops.smp_init_cpus();
 }
 
+static void __init platform_smp_prepare_cpus(unsigned int max_cpus)
+{
+	if (smp_ops.smp_prepare_cpus)
+		smp_ops.smp_prepare_cpus(max_cpus);
+}
+
+static void __cpuinit platform_secondary_init(unsigned int cpu)
+{
+	if (smp_ops.smp_secondary_init)
+		smp_ops.smp_secondary_init(cpu);
+}
+
 int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
 	if (smp_ops.smp_boot_secondary)
@@ -134,6 +146,12 @@ static int platform_cpu_kill(unsigned int cpu)
 	if (smp_ops.cpu_kill)
 		return smp_ops.cpu_kill(cpu);
 	return 1;
+}
+
+static void platform_cpu_die(unsigned int cpu)
+{
+	if (smp_ops.cpu_die)
+		smp_ops.cpu_die(cpu);
 }
 
 static int platform_cpu_disable(unsigned int cpu)
@@ -237,8 +255,7 @@ void __ref cpu_die(void)
 	 * actual CPU shutdown procedure is at least platform (if not
 	 * CPU) specific.
 	 */
-	if (smp_ops.cpu_die)
-		smp_ops.cpu_die(cpu);
+	platform_cpu_die(cpu);
 
 	/*
 	 * Do not return to the idle loop - jump back to the secondary
@@ -301,8 +318,7 @@ asmlinkage void __cpuinit secondary_start_kernel(void)
 	/*
 	 * Give the platform a chance to do its own initialisation.
 	 */
-	if (smp_ops.smp_secondary_init)
-		smp_ops.smp_secondary_init(cpu);
+	platform_secondary_init(cpu);
 
 	notify_cpu_starting(cpu);
 
@@ -374,8 +390,8 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		/*
 		 * Initialise the present map, which describes the set of CPUs
 		 * actually populated at the present time. A platform should
-		 * re-initialize the map in the platforms smp_prepare_cpus()
-		 * if present != possible (e.g. physical hotplug).
+		 * re-initialize the map in platform_smp_prepare_cpus() if
+		 * present != possible (e.g. physical hotplug).
 		 */
 		init_cpu_present(cpu_possible_mask);
 
@@ -383,8 +399,7 @@ void __init smp_prepare_cpus(unsigned int max_cpus)
 		 * Initialise the SCU if there are more than one CPU
 		 * and let them know where to start.
 		 */
-		if (smp_ops.smp_prepare_cpus)
-			smp_ops.smp_prepare_cpus(max_cpus);
+		platform_smp_prepare_cpus(max_cpus);
 	}
 }
 
