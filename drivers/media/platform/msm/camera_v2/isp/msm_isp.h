@@ -282,6 +282,7 @@ struct msm_vfe_src_info {
 	enum msm_vfe_inputmux input_mux;
 	uint32_t width;
 	long pixel_clock;
+	uint32_t last_updt_frm_id;
 };
 
 enum msm_wm_ub_cfg_type {
