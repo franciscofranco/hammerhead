@@ -353,7 +353,7 @@ static void max17048_work(struct work_struct *work)
 	if (ret < 0)
 		pr_err("%s : error clear alert irq register.\n", __func__);
 
-	pr_info("%s: rsoc=0x%04X rvcell=0x%04X soc=%d v_mv=%d i_ua=%d t=%d\n",
+	pr_debug("%s: rsoc=0x%04X rvcell=0x%04X soc=%d v_mv=%d i_ua=%d t=%d\n",
 				__func__, chip->soc, chip->vcell,
 				chip->capacity_level, chip->voltage,
 				chip->batt_current, chip->batt_temp);
