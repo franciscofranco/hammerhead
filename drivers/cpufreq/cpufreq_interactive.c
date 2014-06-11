@@ -1481,6 +1481,9 @@ static int __init cpufreq_interactive_init(void)
 	}
 
 	spin_lock_init(&target_loads_lock);
+	spin_lock_init(&min_sample_time_lock);
+	spin_lock_init(&timer_rate_lock);
+	spin_lock_init(&timer_slack_lock);
 	spin_lock_init(&speedchange_cpumask_lock);
 	spin_lock_init(&above_hispeed_delay_lock);
 	mutex_init(&gov_lock);
