@@ -41,6 +41,7 @@
 #define MIN_CPU_UP_US 1000 * USEC_PER_MSEC;
 #define NUM_POSSIBLE_CPUS num_possible_cpus()
 #define HIGH_LOAD 90 * 2
+#define MAX_FREQ_CAP 1036800
 
 struct cpu_stats
 {
@@ -261,6 +262,25 @@ reschedule:
 		msecs_to_jiffies(t->timer * HZ));
 }
 
+static void screen_off_cap(bool nerf)
+{
+	int cpu;
+	uint32_t freq;
+	struct cpufreq_policy policy;
+
+	freq = nerf ? MAX_FREQ_CAP : LONG_MAX;	
+
+	for_each_online_cpu(cpu) {
+		cpufreq_get_policy(&policy, cpu);
+
+		cpufreq_verify_within_limits(&policy,
+			policy.cpuinfo.min_freq,
+			freq);
+
+		pr_info("CPU%d -> %d\n", cpu, policy.max);
+	}
+}
+
 static void mako_hotplug_suspend(struct work_struct *work)
 {
 	int cpu;
@@ -276,6 +296,8 @@ static void mako_hotplug_suspend(struct work_struct *work)
 	}
 
 	stats.online_cpus = num_online_cpus();
+
+	screen_off_cap(true);
 
 	pr_info("%s: suspend\n", MAKO_HOTPLUG);
 }
@@ -293,6 +315,8 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 	}
 
 	stats.online_cpus = num_online_cpus();
+
+	screen_off_cap(false);
 
 	pr_info("%s: resume\n", MAKO_HOTPLUG);
 }
