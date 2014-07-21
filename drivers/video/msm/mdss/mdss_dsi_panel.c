@@ -21,10 +21,6 @@
 #include <linux/leds.h>
 #include <linux/pwm.h>
 #include <linux/err.h>
-#ifdef CONFIG_DEBUG_FS
-#include <linux/debugfs.h>
-#include <linux/ctype.h>
-#endif
 
 #include <asm/system_info.h>
 
@@ -47,7 +43,9 @@ static struct mdss_panel_common_pdata *local_pdata;
 static struct work_struct send_cmds_work;
 struct mdss_panel_data *cmds_panel_data;
 static struct platform_driver this_driver;
-struct kobject *module_kobj;
+static struct kobject *module_kobj;
+
+static DEFINE_MUTEX(panel_cmd_mutex);
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
 {
@@ -296,8 +294,10 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 
 	pr_debug("%s: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
 
+	mutex_lock(&panel_cmd_mutex);
 	if (local_pdata->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
+	mutex_unlock(&panel_cmd_mutex);
 
 	pr_info("%s\n", __func__);
 	return 0;
@@ -323,8 +323,10 @@ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
 	if (!gpio_get_value(ctrl->disp_en_gpio))
 		return 0;
 
+	mutex_lock(&panel_cmd_mutex);
 	if (ctrl->off_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
+	mutex_unlock(&panel_cmd_mutex);
 
 	pr_info("%s:\n", __func__);
 	return 0;
@@ -761,317 +763,6 @@ error:
 	return -EINVAL;
 }
 
-#ifdef CONFIG_DEBUG_FS
-#define MAX_ON_CMD_SIZE (PAGE_SIZE * 8)
-
-ssize_t on_cmd_read(struct file *filp, char __user *user_buf, size_t count,
-	loff_t *ppos)
-{
-	int ret;
-	int i, j;
-	char *buf;
-	int buf_size;
-	struct dsi_panel_cmds *pcmds;
-
-	struct mdss_panel_common_pdata *panel_data = filp->private_data;
-	if (!panel_data)
-		return -ENODEV;
-
-	pcmds = &panel_data->on_cmds;
-	if (!pcmds)
-		return -EINVAL;
-
-	buf = kzalloc(MAX_ON_CMD_SIZE, GFP_KERNEL);
-
-	strncpy(buf, "qcom,panel-on-cmds = [", 22);
-	buf_size = 22;
-
-	for (i = 0; i < pcmds->cmd_cnt; ++i) {
-		if (buf_size + 20 +
-			(pcmds->cmds[i].dchdr.dlen * 3) >
-			MAX_ON_CMD_SIZE - 4) {
-			pr_warn("Too many on_commands!(< 32KB)\n");
-			ret = -EINVAL;
-			goto read_error;
-		}
-
-		strncpy(&buf[buf_size], "\r\n", 2);
-		buf_size += 2;
-
-		ret = snprintf(&buf[buf_size], 21,
-			"%02x %02x %02x %02x %02x %02x %02x",
-			pcmds->cmds[i].dchdr.dtype,
-			pcmds->cmds[i].dchdr.last,
-			pcmds->cmds[i].dchdr.vc,
-			pcmds->cmds[i].dchdr.ack,
-			pcmds->cmds[i].dchdr.wait,
-			(char)(pcmds->cmds[i].dchdr.dlen & 0xff00) >> 8,
-			(char)(pcmds->cmds[i].dchdr.dlen & 0x00ff));
-
-		if (ret < 0)
-			goto read_error;
-
-		buf_size += ret;
-
-		if (0 < pcmds->cmds[i].dchdr.dlen && pcmds->cmds[i].dchdr.dlen < 3) {
-			ret = snprintf(&buf[buf_size], 4, " %02x",
-				pcmds->cmds[i].payload[0]);
-			if (ret < 0)
-				goto read_error;
-
-			buf_size += ret;
-
-			if (pcmds->cmds[i].dchdr.dlen == 2) {
-				ret = snprintf(&buf[buf_size], 4, " %02x",
-					pcmds->cmds[i].payload[1]);
-				if (ret < 0)
-					goto read_error;
-
-				buf_size += ret;
-			}
-		} else if (pcmds->cmds[i].dchdr.dlen > 2) {
-			for (j = 0; j < pcmds->cmds[i].dchdr.dlen; ++j) {
-				if ((j % 6) == 0) {
-					ret = snprintf(&buf[buf_size], 5, "\r\n%02x",
-						pcmds->cmds[i].payload[j]);
-					if (ret < 0)
-						goto read_error;
-
-					buf_size += ret;
-				} else {
-					ret = snprintf(&buf[buf_size], 4, " %02x",
-						pcmds->cmds[i].payload[j]);
-					if (ret < 0)
-						goto read_error;
-
-					buf_size += ret;
-				}
-			}
-		} else {
-			pr_err("Invalid data length!\n");
-			ret = -EINVAL;
-			goto read_error;
-		}
-	}
-
-	strncpy(&buf[buf_size], "]", 2);
-	buf_size += 2;
-
-	ret = simple_read_from_buffer(user_buf, count, ppos, buf, buf_size);
-read_error:
-	kfree(buf);
-
-	return ret;
-}
-
-static int parse_on_cmds(char **on_cmds, const char *buf, size_t count)
-{
-	int i, j;
-	int on_cmds_len;
-	char *endptr;
-
-	i = 0;
-	do {
-		if (!strncmp(&buf[i], "qcom,panel-on-cmds", 18)) {
-			i += 18;
-			while (i < count && buf[i] != '=')
-				++i;
-			while (i < count && buf[i] != '[')
-				++i;
-			++i;
-			break;
-		}
-	} while (++i < count);
-
-	if (i >= count) {
-		pr_err("Invalid on_cmds start format!\n");
-		return -EINVAL;
-	}
-
-	on_cmds_len = 0;
-
-	for (j = i; j < count; ++j) {
-		if (isxdigit(buf[j]) && isxdigit(buf[j + 1])) {
-			++on_cmds_len;
-			++j;
-		} else if (buf[j] == ']')
-			break;
-	}
-
-	if (j == count)
-		return 0;
-
-	if (buf[j] != ']') {
-		pr_err("Invalid on_cmds end format!\n");
-		return -EINVAL;
-	}
-
-	*on_cmds = kzalloc(on_cmds_len, GFP_KERNEL);
-
-	if (!(*on_cmds))
-		return -ENOMEM;
-
-	j = 0;
-	for (i = 0; i < count; ++i) {
-		if (isxdigit(buf[i]) && isxdigit(buf[i + 1])) {
-			endptr = (char *)&buf[i + 1];
-			(*on_cmds)[j] = (char)simple_strtoul(&buf[i], &endptr, 16);
-			++i;
-			++j;
-		}
-	}
-
-	return on_cmds_len;
-}
-
-static char *user_buf_total = NULL;
-static int user_buf_total_pos = 0;
-
-ssize_t on_cmd_write(struct file *filp, const char __user *user_buf,
-	size_t count, loff_t *ppos)
-{
-	static char *buf = NULL;
-	char *prev_on_cmds = NULL;
-	int blen = 0, len;
-	char *bp;
-	struct dsi_ctrl_hdr *dchdr;
-	int i, cnt;
-	int ret;
-	struct dsi_panel_cmds *pcmds;
-
-	struct mdss_panel_common_pdata *panel_data = filp->private_data;
-	if (!panel_data)
-		return -ENODEV;
-
-	pcmds = &panel_data->on_cmds;
-	if (!pcmds)
-		return -EINVAL;
-
-	prev_on_cmds = buf;
-
-	if (user_buf_total) {
-		if (user_buf_total_pos + count < MAX_ON_CMD_SIZE) {
-			memcpy(&user_buf_total[user_buf_total_pos], user_buf, count);
-			user_buf_total_pos += count;
-			blen = parse_on_cmds(&buf, user_buf_total,
-				user_buf_total_pos);
-		} else {
-			pr_warn("Too large file size(< 32KB)!\n");
-			ret = -EINVAL;
-			goto write_error;
-		}
-	} else {
-		blen = parse_on_cmds(&buf, user_buf, count);
-	}
-
-	if (blen == 0) {
-		if (!user_buf_total) {
-			user_buf_total = kzalloc(MAX_ON_CMD_SIZE, GFP_KERNEL);
-			if (!user_buf_total) {
-				ret = -ENOMEM;
-				goto write_error;
-			}
-			memcpy(user_buf_total, user_buf, count);
-			user_buf_total_pos += count;
-		}
-		return count;
-	} else if (blen < 0) {
-		pr_err("Invalid on_cmd format or length!\n");
-		ret = -EINVAL;
-		goto write_error;
-	}
-
-	/* scan dcs commands */
-	bp = buf;
-	len = blen;
-	cnt = 0;
-	while (len > sizeof(*dchdr)) {
-		dchdr = (struct dsi_ctrl_hdr *)bp;
-		dchdr->dlen = ntohs(dchdr->dlen);
-		if (dchdr->dlen > len) {
-			pr_err("%s: dtsi cmd=%x error, len=%d",
-				__func__, dchdr->dtype, dchdr->dlen);
-			return -ENOMEM;
-		}
-		bp += sizeof(*dchdr);
-		len -= sizeof(*dchdr);
-		bp += dchdr->dlen;
-		len -= dchdr->dlen;
-		cnt++;
-	}
-
-	if (len != 0) {
-		pr_err("%s: dcs_cmd=%x len=%d error!",
-				__func__, buf[0], blen);
-		kfree(buf);
-		ret = -ENOMEM;
-		goto write_error;
-	}
-
-	kfree(pcmds->cmds);
-
-	pcmds->cmds = kzalloc(cnt * sizeof(struct dsi_cmd_desc),
-						GFP_KERNEL);
-	if (!pcmds->cmds) {
-		if (buf) {
-			kfree(buf);
-			buf = prev_on_cmds;
-		}
-		ret = -ENOMEM;
-		goto write_error;
-	}
-
-	pcmds->cmd_cnt = cnt;
-	pcmds->buf = buf;
-	pcmds->blen = blen;
-
-	bp = buf;
-	len = blen;
-	for (i = 0; i < cnt; i++) {
-		dchdr = (struct dsi_ctrl_hdr *)bp;
-		len -= sizeof(*dchdr);
-		bp += sizeof(*dchdr);
-		pcmds->cmds[i].dchdr = *dchdr;
-		pcmds->cmds[i].payload = bp;
-		bp += dchdr->dlen;
-		len -= dchdr->dlen;
-	}
-
-	if (prev_on_cmds)
-		kfree(prev_on_cmds);
-
-	ret = count;
-write_error:
-	if (user_buf_total) {
-		kfree(user_buf_total);
-		user_buf_total = NULL;
-		user_buf_total_pos = 0;
-	}
-
-	return ret;
-}
-
-static const struct file_operations on_cmd_fops = {
-	.open = simple_open,
-	.read = on_cmd_read,
-	.write = on_cmd_write,
-};
-
-static int debug_fs_init(struct mdss_panel_common_pdata *panel_data)
-{
-	struct dentry *dsi_base;
-
-	dsi_base = debugfs_create_dir("mdss_dsi", NULL);
-	if (!dsi_base)
-		return -ENOMEM;
-
-	debugfs_create_file("on_cmd", S_IRUSR | S_IRGRP | S_IWUSR, dsi_base,
-		panel_data, &on_cmd_fops);
-
-	return 0;
-}
-#endif
-
 static int read_local_on_cmds(char *buf, size_t cmd)
 {
 	int i, len = 0;
@@ -1082,6 +773,7 @@ static int read_local_on_cmds(char *buf, size_t cmd)
 		return -EINVAL;
 	}
 
+	mutex_lock(&panel_cmd_mutex);
 	dlen = local_pdata->on_cmds.cmds[cmd].dchdr.dlen - 1;
 	if (!dlen)
 		return -ENOMEM;
@@ -1092,14 +784,13 @@ static int read_local_on_cmds(char *buf, size_t cmd)
 			       local_pdata->on_cmds.cmds[cmd].payload[i]);
 
 	len += sprintf(buf + len, "\n");
+	mutex_unlock(&panel_cmd_mutex);
 
 	return len;
 }
 
-static unsigned int cnt;
-
 static int write_local_on_cmds(struct device *dev, const char *buf,
-			       size_t cmd)
+			       size_t cmd, size_t count)
 {
 	int i, rc = 0;
 	int dlen;
@@ -1107,11 +798,6 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 	char tmp[3];
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_common_pdata *prev_local_data;
-
-	if (cnt) {
-		cnt = 0;
-		return -EINVAL;
-	}
 
 	if (system_rev != GAMMA_COMPAT) {
 		pr_err("Incompatible hardware revision: %d\n", system_rev);
@@ -1126,6 +812,7 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 	ctrl = container_of(cmds_panel_data, struct mdss_dsi_ctrl_pdata,
 				panel_data);
 
+	mutex_lock(&panel_cmd_mutex);
 	/*
 	 * Last bit is not written because it's either fixed at 0x00 for
 	 * RGB or a duplicate of the previous bit for the white point.
@@ -1141,8 +828,9 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 		if (rc != 1)
 			return -EINVAL;
 
-		if (val > 255) {
-			pr_err("%s: Invalid input data %u (0-255)\n", __func__, val);
+		if (val < 0 || val > 255) {
+			pr_err("%s: Invalid input data %u (0-255)\n",
+			       __func__, val);
 			local_pdata = prev_local_data;
 			return -EINVAL;
 		}
@@ -1154,12 +842,12 @@ static int write_local_on_cmds(struct device *dev, const char *buf,
 
 		sscanf(buf, "%s", tmp);
 		buf += strlen(tmp) + 1;
-		cnt = strlen(tmp);
 	}
+	mutex_unlock(&panel_cmd_mutex);
 
 	pr_info("%s\n", __func__);
 
-	return rc;
+	return count;
 }
 
 static void send_local_on_cmds(struct work_struct *work)
@@ -1174,8 +862,10 @@ static void send_local_on_cmds(struct work_struct *work)
 	ctrl = container_of(cmds_panel_data, struct mdss_dsi_ctrl_pdata,
 			    panel_data);
 
+	mutex_lock(&panel_cmd_mutex);
 	if (local_pdata->on_cmds.cmd_cnt)
 		mdss_dsi_panel_cmds_send(ctrl, &local_pdata->on_cmds);
+	mutex_unlock(&panel_cmd_mutex);
 
 	pr_info("%s\n", __func__);
 }
@@ -1218,7 +908,7 @@ static ssize_t write_##file_name				\
 (struct device *dev, struct device_attribute *attr, 		\
 		const char *buf, size_t count)  		\
 {								\
-	return write_local_on_cmds(dev, buf, cmd);		\
+	return write_local_on_cmds(dev, buf, cmd, count);	\
 }
 
 write_one(kgamma_w,   5);
@@ -1293,10 +983,6 @@ static int __devinit mdss_dsi_panel_probe(struct platform_device *pdev)
 	local_pdata = &vendor_pdata;
 	if (!local_pdata)
 		return -EINVAL;
-
-#ifdef CONFIG_DEBUG_FS
-	debug_fs_init(&vendor_pdata);
-#endif
 
 	module_kobj = kobject_create_and_add(driver_name, &module_kset->kobj);
 	if (!module_kobj) {
