@@ -49,9 +49,11 @@ struct cpu_stats
 	unsigned int counter;
 	struct notifier_block notif;
 	u64 timestamp;
+	uint32_t freq;
 } stats = {
 	.counter = 0,
 	.timestamp = 0,
+	.freq = 0,
 };
 
 struct hotplug_tunables
@@ -262,22 +264,35 @@ reschedule:
 		msecs_to_jiffies(t->timer * HZ));
 }
 
+static int cpufreq_callback(struct notifier_block *nfb,
+		unsigned long event, void *data)
+{
+	struct cpufreq_policy *policy = data;
+
+	if (event != CPUFREQ_ADJUST)
+		return 0;
+
+	cpufreq_verify_within_limits(policy,
+		policy->cpuinfo.min_freq,
+		stats.freq);
+
+	pr_info("CPU%d -> %d\n", policy->cpu, policy->max);
+
+	return 0;
+}
+
+static struct notifier_block cpufreq_notifier = {
+	.notifier_call = cpufreq_callback,
+};
+
 static void screen_off_cap(bool nerf)
 {
 	int cpu;
-	uint32_t freq;
-	struct cpufreq_policy policy;
 
-	freq = nerf ? MAX_FREQ_CAP : LONG_MAX;	
+	stats.freq = nerf ? MAX_FREQ_CAP : LONG_MAX;
 
 	for_each_online_cpu(cpu) {
-		cpufreq_get_policy(&policy, cpu);
-
-		cpufreq_verify_within_limits(&policy,
-			policy.cpuinfo.min_freq,
-			freq);
-
-		pr_info("CPU%d -> %d\n", cpu, policy.max);
+		cpufreq_update_policy(cpu);
 	}
 }
 
@@ -575,6 +590,9 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	INIT_DELAYED_WORK(&decide_hotplug, decide_hotplug_func);
 
 	queue_delayed_work_on(0, wq, &decide_hotplug, HZ * 20);
+
+	cpufreq_register_notifier(&cpufreq_notifier,
+			CPUFREQ_POLICY_NOTIFIER);
 
 err:
 	return ret;
