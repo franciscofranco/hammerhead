@@ -2345,7 +2345,7 @@ static void pp_hist_read(char __iomem *v_base,
 	hist_info->data[i_start] = data & 0xFFFFFF;
 	for (i = i_start + 1; i < HIST_V_SIZE; i++)
 		hist_info->data[i] = readl_relaxed(v_base) & 0xFFFFFF;
-	for (i = 0; i < i_start - 1; i++)
+	for (i = 0; i < i_start; i++)
 		hist_info->data[i] = readl_relaxed(v_base) & 0xFFFFFF;
 	hist_info->hist_cnt_read++;
 }
