@@ -386,8 +386,8 @@ static unsigned int choose_freq(
 static unsigned int calc_freq(struct cpufreq_interactive_cpuinfo *pcpu, 
 	unsigned int load)
 {
-	unsigned int max = pcpu->policy->cpuinfo.max_freq;
-	unsigned int min = pcpu->policy->cpuinfo.min_freq;
+	unsigned int max = pcpu->policy->max;
+	unsigned int min = pcpu->policy->min;
 
 	return min + load * (max - min) / 100;
 }
