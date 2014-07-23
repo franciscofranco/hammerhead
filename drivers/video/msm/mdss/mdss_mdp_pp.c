@@ -1077,7 +1077,7 @@ static int pp_dspp_setup(u32 disp_num, struct mdss_mdp_mixer *mixer)
 			  (dither_depth_map[dither_cfg->b_cb_depth] << 2) |
 			  (dither_depth_map[dither_cfg->r_cr_depth] << 4));
 			offset += 0x14;
-			for (i = 0; i << 16; i += 4) {
+			for (i = 0; i < 16; i += 4) {
 				data = dither_matrix[i] |
 					(dither_matrix[i + 1] << 4) |
 					(dither_matrix[i + 2] << 8) |
