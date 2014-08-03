@@ -45,15 +45,17 @@
 
 struct cpu_stats
 {
-    unsigned int online_cpus;
+	unsigned int online_cpus;
 	unsigned int counter;
 	struct notifier_block notif;
 	u64 timestamp;
 	uint32_t freq;
+	bool screen_cap_lock;
 } stats = {
 	.counter = 0,
 	.timestamp = 0,
 	.freq = 0,
+	.screen_cap_lock = false,
 };
 
 struct hotplug_tunables
@@ -269,7 +271,7 @@ static int cpufreq_callback(struct notifier_block *nfb,
 {
 	struct cpufreq_policy *policy = data;
 
-	if (event != CPUFREQ_ADJUST)
+	if (event != CPUFREQ_ADJUST || !stats.screen_cap_lock)
 		return 0;
 
 	cpufreq_verify_within_limits(policy,
@@ -291,9 +293,11 @@ static void screen_off_cap(bool nerf)
 
 	stats.freq = nerf ? MAX_FREQ_CAP : LONG_MAX;
 
+	stats.screen_cap_lock = true;
 	for_each_online_cpu(cpu) {
 		cpufreq_update_policy(cpu);
 	}
+	stats.screen_cap_lock = false;
 }
 
 static void mako_hotplug_suspend(struct work_struct *work)
@@ -321,6 +325,8 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 {
 	int cpu;
 
+	screen_off_cap(false);
+
 	for_each_possible_cpu(cpu)
 	{
 		if (!cpu)
@@ -330,8 +336,6 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 	}
 
 	stats.online_cpus = num_online_cpus();
-
-	screen_off_cap(false);
 
 	pr_info("%s: resume\n", MAKO_HOTPLUG);
 }
