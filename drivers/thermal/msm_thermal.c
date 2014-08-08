@@ -33,24 +33,26 @@ static struct thermal_info {
 	uint32_t limited_max_freq;
 	unsigned int safe_diff;
 	bool throttling;
+	bool pending_change;
 } info = {
 	.cpuinfo_max_freq = LONG_MAX,
 	.limited_max_freq = LONG_MAX,
 	.safe_diff = 5,
 	.throttling = false,
+	.pending_change = false,
 };
 
 enum thermal_freqs {
-	FREQ_HELL 	  = 729600,
-	FREQ_VERY_HOT = 1036800,
-	FREQ_HOT 	  = 1267200,
-	FREQ_WARM 	  = 1497600,
+	FREQ_HELL		= 729600,
+	FREQ_VERY_HOT		= 1036800,
+	FREQ_HOT		= 1267200,
+	FREQ_WARM		= 1497600,
 };
 
 enum threshold_levels {
-	LEVEL_HELL 	   = 12,
-	LEVEL_VERY_HOT = 9,
-	LEVEL_HOT 	   = 5,
+	LEVEL_HELL		= 12,
+	LEVEL_VERY_HOT		= 9,
+	LEVEL_HOT		= 5,
 };
 
 static struct msm_thermal_data msm_thermal_info;
@@ -67,7 +69,7 @@ static int msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 {
 	struct cpufreq_policy *policy = data;
 
-	if (event != CPUFREQ_ADJUST)
+	if (event != CPUFREQ_ADJUST && !info.pending_change)
 		return 0;
 
 	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
@@ -89,7 +91,8 @@ static void limit_cpu_freqs(uint32_t max_freq)
 
 	info.limited_max_freq = max_freq;
 
-	/* Update new limits */
+	info.pending_change = true;
+
 	get_online_cpus();
 	for_each_online_cpu(cpu)
 	{
@@ -98,6 +101,8 @@ static void limit_cpu_freqs(uint32_t max_freq)
 				KBUILD_MODNAME, cpu, info.limited_max_freq);
 	}
 	put_online_cpus();
+
+	info.pending_change = false;
 }
 
 static void check_temp(struct work_struct *work)
