@@ -3214,11 +3214,9 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	/*
 	 * Cancel ongoing scan to sync up with sme state machine of cfg80211.
 	 */
-#if !defined(ESCAN_RESULT_PATCH)
 	if (wl->scan_request) {
 		wl_notify_escan_complete(wl, dev, true, true);
 	}
-#endif
 #ifdef WL_SCHED_SCAN
 	/* Locks are taken in wl_cfg80211_sched_scan_stop()
 	 * A start scan occuring during connect is unlikely
