@@ -1275,7 +1275,7 @@ int __init acpuclk_krait_init(struct device *dev,
 	acpuclk_register(&acpuclk_krait_data);
 	register_hotcpu_notifier(&acpuclk_cpu_notifier);
 
-	acpuclk_krait_debug_init(&drv);
+	//acpuclk_krait_debug_init(&drv);
 
 	return 0;
 }
