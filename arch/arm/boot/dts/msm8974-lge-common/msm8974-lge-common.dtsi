@@ -60,12 +60,6 @@
 				<84 512 0 0>,
 				<84 512 500 800>;
 	};
-
-	bt_rfkill {
-		compatible = "lge,bluetooth_rfkill";
-		//gpio-bt-reset = <&msmgpio 20 0>;
-		gpio-bt-on = <&msmgpio 41 0>;
-		};
 };
 
 &spmi_bus {
