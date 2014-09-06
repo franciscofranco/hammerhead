@@ -971,7 +971,7 @@ static struct gpiomux_setting bt_gpio_uart_active_config = {
 static struct gpiomux_setting bt_gpio_uart_suspend_config = {
 	.func = GPIOMUX_FUNC_GPIO, /* SUSPEND Configuration */
 	.drv = GPIOMUX_DRV_2MA, /* Drive Strength */
-	.pull = GPIOMUX_PULL_NONE, /* PULL Configuration */
+	.pull = GPIOMUX_PULL_DOWN, /* PULL Configuration */
 };
 
 static struct gpiomux_setting bt_rfkill_active_config = {
