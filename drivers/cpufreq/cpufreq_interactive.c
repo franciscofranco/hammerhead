@@ -31,6 +31,7 @@
 #include <linux/slab.h>
 #include <linux/kernel_stat.h>
 #include <asm/cputime.h>
+#include <linux/touchboost.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/cpufreq_interactive.h>
@@ -108,11 +109,6 @@ static int nabove_hispeed_delay = ARRAY_SIZE(default_above_hispeed_delay);
 static int boostpulse_duration_val = DEFAULT_BOOSTPULSE_DURATION;
 #define DEFAULT_INPUT_BOOST_FREQ 1190400
 int input_boost_freq = DEFAULT_INPUT_BOOST_FREQ;
-
-/*
- * From the touch notifier
- */
-extern u64 last_input_time;
 
 /*
  * Making sure cpufreq stays low when it needs to stay low
@@ -388,7 +384,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	do_div(cputime_speedadj, delta_time);
 	loadadjfreq = (unsigned int)cputime_speedadj * 100;
 	cpu_load = loadadjfreq / pcpu->target_freq;
-	boosted = now < (last_input_time + boostpulse_duration_val);
+	boosted = now < (get_input_time() + boostpulse_duration_val);
 
 	cpufreq_notify_utilization(pcpu->policy, cpu_load);
 

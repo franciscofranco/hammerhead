@@ -11,34 +11,34 @@
  * GNU General Public License for more details.
  */
 
-#define pr_fmt(fmt) "cpu-boost: " fmt
-
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/notifier.h>
-#include <linux/cpufreq.h>
 #include <linux/cpu.h>
 #include <linux/sched.h>
 #include <linux/jiffies.h>
-#include <linux/kthread.h>
-#include <linux/moduleparam.h>
-#include <linux/slab.h>
 #include <linux/input.h>
 #include <linux/time.h>
+#include <linux/slab.h>
 
 #define MIM_TIME_INTERVAL_US (150 * USEC_PER_MSEC)
+
+struct touchboost_inputopen {
+	struct input_handle *handle;
+	struct work_struct inputopen_work;
+} touchboost_inputopen;
 
 /*
  * Use this variable in your governor of choice to calculate when the cpufreq
  * core is allowed to ramp the cpu down after an input event. That logic is done
  * by you, this var only outputs the last time in us an event was captured
  */
-u64 last_input_time;
+static u64 last_input_time = 0;
 
-struct touchboost_inputopen {
-	struct input_handle *handle;
-	struct work_struct inputopen_work;
-} touchboost_inputopen;
+inline u64 get_input_time(void)
+{
+	return last_input_time;
+}
 
 static void boost_input_event(struct input_handle *handle,
                 unsigned int type, unsigned int code, int value)
@@ -133,7 +133,7 @@ static struct input_handler boost_input_handler = {
 	.id_table       = boost_ids,
 };
 
-static int init(void)
+static int __init init(void)
 {
 	INIT_WORK(&touchboost_inputopen.inputopen_work, boost_input_open);
 

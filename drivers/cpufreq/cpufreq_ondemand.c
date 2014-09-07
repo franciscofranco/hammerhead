@@ -26,6 +26,7 @@
 #include <linux/sched.h>
 #include <linux/workqueue.h>
 #include <linux/slab.h>
+#include <linux/touchboost.h>
 
 /*
  * dbs is used in this file as a shortform for demandbased switching
@@ -157,8 +158,6 @@ static struct dbs_tuners {
 	.input_boost_freq = 1497600,
 	.boostpulse_duration = 250000,
 };
-
-extern u64 last_input_time;
 
 /*
  * Find right freq to be set now with powersave_bias on.
@@ -735,7 +734,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	struct cpufreq_policy *policy;
 	unsigned int j;
 	bool boosted = ktime_to_us(ktime_get()) < 
-		(last_input_time + dbs_tuners_ins.boostpulse_duration);
+		(get_input_time() + dbs_tuners_ins.boostpulse_duration);
 
 	this_dbs_info->freq_lo = 0;
 	policy = this_dbs_info->cur_policy;
