@@ -38,13 +38,12 @@
 #define DEFAULT_MIN_TIME_CPU_ONLINE 1
 #define DEFAULT_TIMER 1
 
-#define MIN_CPU_UP_US 1000 * USEC_PER_MSEC;
+#define MIN_CPU_UP_US (1000 * USEC_PER_MSEC)
 #define NUM_POSSIBLE_CPUS num_possible_cpus()
-#define HIGH_LOAD 90 * 2
+#define HIGH_LOAD (90 * 2)
 #define MAX_FREQ_CAP 1036800
 
-struct cpu_stats
-{
+struct cpu_stats {
 	unsigned int online_cpus;
 	unsigned int counter;
 	struct notifier_block notif;
@@ -60,8 +59,7 @@ struct cpu_stats
 	.suspend = false,
 };
 
-struct hotplug_tunables
-{
+struct hotplug_tunables {
 	/*
 	 * system load threshold to decide when online or offline cores
 	 * from 0 to 100
@@ -77,8 +75,8 @@ struct hotplug_tunables
 
 	/*
 	 * max number of samples counters allowed to be counted. The higher the
-	 * value the longer it will take the driver to offline cores after a period
-	 * of high and continuous load
+	 * value the longer it will take the driver to offline cores after a
+	 * period of high and continuous load
 	 */
 	unsigned int max_load_counter;
 
@@ -95,8 +93,9 @@ struct hotplug_tunables
 	unsigned int min_time_cpu_online;
 
 	/*
-	 * sample timer in seconds. The default value of 1 equals to 10 samples
-	 * every second. The higher the value the less samples per second it runs
+	 * sample timer in seconds. The default value of 1 equals to 10
+	 * samples every second. The higher the value the less samples
+	 * per second it runs
 	 */
 	unsigned int timer;
 } tunables;
@@ -105,38 +104,34 @@ static struct workqueue_struct *wq;
 static struct delayed_work decide_hotplug;
 static struct work_struct suspend, resume;
 
-inline static void cpus_online_work(void)
+static inline void cpus_online_work(void)
 {
 	unsigned int cpu;
 
-	for (cpu = 2; cpu < 4; cpu++)
-	{
+	for (cpu = 2; cpu < 4; cpu++) {
 		if (cpu_is_offline(cpu))
 			cpu_up(cpu);
 	}
 }
 
-inline static void cpus_offline_work(void)
+static inline void cpus_offline_work(void)
 {
 	unsigned int cpu;
 
-	for (cpu = 3; cpu > 1; cpu--)
-	{
+	for (cpu = 3; cpu > 1; cpu--) {
 		if (cpu_online(cpu))
 			cpu_down(cpu);
 	}
 }
 
-inline static bool cpus_cpufreq_work(void)
+static inline bool cpus_cpufreq_work(void)
 {
 	struct hotplug_tunables *t = &tunables;
 	unsigned int current_freq = 0;
 	unsigned int cpu;
 
 	for (cpu = 2; cpu < 4; cpu++)
-	{
 		current_freq += cpufreq_quick_get(cpu);
-	}
 
 	return (current_freq >> 1) >= t->cpufreq_unplug_limit;
 }
@@ -151,13 +146,9 @@ static void cpu_revive(unsigned int load)
 	 * online the cpu, no questions asked. 200ms here equals two samples
 	 */
 	if (load >= HIGH_LOAD && stats.counter >= 2)
-	{
 		goto online_all;
-	}
 	else if (!(stats.counter >= t->high_load_counter))
-	{
 		return;
-	}
 
 online_all:
 	cpus_online_work();
@@ -171,9 +162,7 @@ static void cpu_smash(void)
 	u64 extra_time = MIN_CPU_UP_US;
 
 	if (stats.counter >= t->high_load_counter)
-	{
 		return;
-	}
 
 	/*
 	 * offline the cpu only if its freq is lower than
@@ -181,9 +170,7 @@ static void cpu_smash(void)
 	 * postpone the cpu offline process to at least another second
 	 */
 	if (cpus_cpufreq_work())
-	{
 		stats.timestamp = ktime_to_us(ktime_get());
-	}
 
 	/*
 	 * Let's not unplug this cpu unless its been online for longer than
@@ -191,14 +178,10 @@ static void cpu_smash(void)
 	 * closer to the threshold point.
 	 */
 	if (t->min_time_cpu_online > 1)
-	{
 		extra_time = t->min_time_cpu_online * MIN_CPU_UP_US;
-	}
 
 	if (ktime_to_us(ktime_get()) < stats.timestamp + extra_time)
-	{
 		return;
-	}
 
 	cpus_offline_work();
 
@@ -217,45 +200,36 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 	unsigned int cpu;
 
 	/*
-	 * reschedule early when the system has woken up from the FREEZER but the
-	 * display is not on
+	 * reschedule early when the system has woken up from the FREEZER
+	 * but the display is not on
 	 */
 	if (unlikely(stats.online_cpus == 1) || stats.suspend)
-	{
 		goto reschedule;
-	}
 
 	/*
 	 * reschedule early when the user doesn't want more than 2 cores online
 	 */
 	if (unlikely(t->load_threshold == 100 && stats.online_cpus == 2))
-	{
 		goto reschedule;
-	}
 
 	/*
 	 * reschedule early when users desire to run with all cores online
 	 */
-	if (unlikely(!t->load_threshold && stats.online_cpus == NUM_POSSIBLE_CPUS))
-	{
+	if (unlikely(!t->load_threshold &&
+			stats.online_cpus == NUM_POSSIBLE_CPUS)) {
 		goto reschedule;
 	}
 
 	for (cpu = 0; cpu < 2; cpu++)
-	{
 		cur_load += cpufreq_quick_get_util(cpu);
-	}
 
-	if (cur_load >= (t->load_threshold << 1))
-	{
+	if (cur_load >= (t->load_threshold << 1)) {
 		if (stats.counter < t->max_load_counter)
 			++stats.counter;
 
 		if (stats.online_cpus <= 2)
 			cpu_revive(cur_load);
-	}
-	else
-	{
+	} else {
 		if (stats.counter)
 			--stats.counter;
 
@@ -296,9 +270,10 @@ static void screen_off_cap(bool nerf)
 	stats.freq = nerf ? MAX_FREQ_CAP : LONG_MAX;
 
 	stats.screen_cap_lock = true;
-	for_each_online_cpu(cpu) {
+
+	for_each_online_cpu(cpu)
 		cpufreq_update_policy(cpu);
-	}
+
 	stats.screen_cap_lock = false;
 }
 
@@ -308,8 +283,7 @@ static void mako_hotplug_suspend(struct work_struct *work)
 
 	stats.counter = 0;
 
-	for_each_online_cpu(cpu)
-	{
+	for_each_online_cpu(cpu) {
 		if (cpu < 2)
 			continue;
 
@@ -331,8 +305,7 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 
 	screen_off_cap(false);
 
-	for_each_possible_cpu(cpu)
-	{
+	for_each_possible_cpu(cpu) {
 		if (!cpu || cpu_online(cpu))
 			continue;
 
@@ -365,7 +338,7 @@ static ssize_t load_threshold_show(struct device *dev,
 {
 	struct hotplug_tunables *t = &tunables;
 
-	return sprintf(buf, "%u\n", t->load_threshold);
+	return snprintf(buf, PAGE_SIZE, "%u\n", t->load_threshold);
 }
 
 static ssize_t load_threshold_store(struct device *dev,
@@ -389,7 +362,7 @@ static ssize_t high_load_counter_show(struct device *dev,
 {
 	struct hotplug_tunables *t = &tunables;
 
-	return sprintf(buf, "%u\n", t->high_load_counter);
+	return snprintf(buf, PAGE_SIZE, "%u\n", t->high_load_counter);
 }
 
 static ssize_t high_load_counter_store(struct device *dev,
@@ -413,7 +386,7 @@ static ssize_t max_load_counter_show(struct device *dev,
 {
 	struct hotplug_tunables *t = &tunables;
 
-	return sprintf(buf, "%u\n", t->max_load_counter);
+	return snprintf(buf, PAGE_SIZE, "%u\n", t->max_load_counter);
 }
 
 static ssize_t max_load_counter_store(struct device *dev,
@@ -437,7 +410,7 @@ static ssize_t cpufreq_unplug_limit_show(struct device *dev,
 {
 	struct hotplug_tunables *t = &tunables;
 
-	return sprintf(buf, "%u\n", t->cpufreq_unplug_limit);
+	return snprintf(buf, PAGE_SIZE, "%u\n", t->cpufreq_unplug_limit);
 }
 
 static ssize_t cpufreq_unplug_limit_store(struct device *dev,
@@ -461,7 +434,7 @@ static ssize_t min_time_cpu_online_show(struct device *dev,
 {
 	struct hotplug_tunables *t = &tunables;
 
-	return sprintf(buf, "%u\n", t->min_time_cpu_online);
+	return snprintf(buf, PAGE_SIZE, "%u\n", t->min_time_cpu_online);
 }
 
 static ssize_t min_time_cpu_online_store(struct device *dev,
@@ -485,7 +458,7 @@ static ssize_t timer_show(struct device *dev, struct device_attribute *attr,
 {
 	struct hotplug_tunables *t = &tunables;
 
-	return sprintf(buf, "%u\n", t->timer);
+	return snprintf(buf, PAGE_SIZE, "%u\n", t->timer);
 }
 
 static ssize_t timer_store(struct device *dev, struct device_attribute *attr,
@@ -516,8 +489,7 @@ static DEVICE_ATTR(min_time_cpu_online, 0664, min_time_cpu_online_show,
 		min_time_cpu_online_store);
 static DEVICE_ATTR(timer, 0664, timer_show, timer_store);
 
-static struct attribute *mako_hotplug_control_attributes[] =
-{
+static struct attribute *mako_hotplug_control_attributes[] = {
 	&dev_attr_load_threshold.attr,
 	&dev_attr_high_load_counter.attr,
 	&dev_attr_max_load_counter.attr,
@@ -527,13 +499,11 @@ static struct attribute *mako_hotplug_control_attributes[] =
 	NULL
 };
 
-static struct attribute_group mako_hotplug_control_group =
-{
+static struct attribute_group mako_hotplug_control_group = {
 	.attrs  = mako_hotplug_control_attributes,
 };
 
-static struct miscdevice mako_hotplug_control_device =
-{
+static struct miscdevice mako_hotplug_control_device = {
 	.minor = MISC_DYNAMIC_MINOR,
 	.name = "mako_hotplug_control",
 };
@@ -549,8 +519,7 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 
 	wq = alloc_workqueue("mako_hotplug_workqueue", WQ_FREEZABLE, 1);
 
-	if (!wq)
-	{
+	if (!wq) {
 		ret = -ENOMEM;
 		goto err;
 	}
@@ -565,25 +534,20 @@ static int __devinit mako_hotplug_probe(struct platform_device *pdev)
 	stats.notif.notifier_call = lcd_notifier_callback;
 	stats.online_cpus = num_online_cpus();
 
-	if (lcd_register_client(&stats.notif))
-	{
+	if (lcd_register_client(&stats.notif)) {
 		ret = -EINVAL;
 		goto err;
 	}
 
 	ret = misc_register(&mako_hotplug_control_device);
-
-	if (ret)
-	{
+	if (ret) {
 		ret = -EINVAL;
 		goto err;
 	}
 
 	ret = sysfs_create_group(&mako_hotplug_control_device.this_device->kobj,
 			&mako_hotplug_control_group);
-
-	if (ret)
-	{
+	if (ret) {
 		ret = -EINVAL;
 		goto err;
 	}
@@ -627,18 +591,12 @@ static int __init mako_hotplug_init(void)
 	int ret;
 
 	ret = platform_driver_register(&mako_hotplug_driver);
-
 	if (ret)
-	{
 		return ret;
-	}
 
 	ret = platform_device_register(&mako_hotplug_device);
-
 	if (ret)
-	{
 		return ret;
-	}
 
 	pr_info("%s: init\n", MAKO_HOTPLUG);
 
