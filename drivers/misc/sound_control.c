@@ -10,11 +10,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/miscdevice.h>
-
-extern void update_headphones_volume_boost(int vol_boost);
-extern void update_headset_boost(int vol_boost);
-extern void update_speaker_gain(int vol_boost);
-extern void update_mic_gain(int vol_boost);
+#include <linux/sound_control.h>
 
 #define MAX_VALUE 20
 
