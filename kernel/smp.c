@@ -414,16 +414,6 @@ void smp_call_function_many(const struct cpumask *mask,
 	if (unlikely(!cpumask_weight(data->cpumask)))
 		return;
 
-<<<<<<< HEAD
-	/*
-	 * After we put an entry into the list, data->cpumask
-	 * may be cleared again when another CPU sends another IPI for
-	 * a SMP function call, so data->cpumask will be zero.
-	 */
-	cpumask_copy(data->cpumask_ipi, data->cpumask);
-	raw_spin_lock_irqsave(&call_function.lock, flags);
-=======
->>>>>>> 511f808... smp: Fix SMP function call empty cpu mask race
 	/*
 	 * After we put an entry into the list, data->cpumask
 	 * may be cleared again when another CPU sends another IPI for
