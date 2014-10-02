@@ -145,45 +145,36 @@ reschedule:
 	schedule_delayed_work_on(0, &check_temp_work, msecs_to_jiffies(250));
 }
 
-int __devinit msm_thermal_init(struct msm_thermal_data *pdata)
-{
-	int ret = 0;
-
-	BUG_ON(!pdata);
-	BUG_ON(pdata->sensor_id >= TSENS_MAX_SENSORS);
-	memcpy(&msm_thermal_info, pdata, sizeof(struct msm_thermal_data));
-
-	cpufreq_register_notifier(&msm_thermal_cpufreq_notifier,
-			CPUFREQ_POLICY_NOTIFIER);
-
-	INIT_DELAYED_WORK(&check_temp_work, check_temp);
-	schedule_delayed_work_on(0, &check_temp_work, 0);
-
-	return ret;
-}
-
 static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 {
 	int ret = 0;
-	char *key = NULL;
 	struct device_node *node = pdev->dev.of_node;
 	struct msm_thermal_data data;
 
 	memset(&data, 0, sizeof(struct msm_thermal_data));
-	key = "qcom,sensor-id";
-	ret = of_property_read_u32(node, key, &data.sensor_id);
+
+	ret = of_property_read_u32(node, "qcom,sensor-id", &data.sensor_id);
 	if (ret)
-		goto fail;
+		return ret;
+
 	WARN_ON(data.sensor_id >= TSENS_MAX_SENSORS);
 
-fail:
-	if (ret)
-		pr_err("%s: Failed reading node=%s, key=%s\n",
-		       __func__, node->full_name, key);
-	else
-		ret = msm_thermal_init(&data);
+        memcpy(&msm_thermal_info, &data, sizeof(struct msm_thermal_data));
+
+        INIT_DELAYED_WORK(&check_temp_work, check_temp);
+        schedule_delayed_work_on(0, &check_temp_work, 5);
+
+	cpufreq_register_notifier(&msm_thermal_cpufreq_notifier,
+			CPUFREQ_POLICY_NOTIFIER);
 
 	return ret;
+}
+
+static int msm_thermal_dev_remove(struct platform_device *pdev)
+{
+	cpufreq_unregister_notifier(&msm_thermal_cpufreq_notifier,
+                        CPUFREQ_POLICY_NOTIFIER);
+	return 0;
 }
 
 static struct of_device_id msm_thermal_match_table[] = {
@@ -193,6 +184,7 @@ static struct of_device_id msm_thermal_match_table[] = {
 
 static struct platform_driver msm_thermal_device_driver = {
 	.probe = msm_thermal_dev_probe,
+	.remove = msm_thermal_dev_remove,
 	.driver = {
 		.name = "msm-thermal",
 		.owner = THIS_MODULE,
@@ -200,7 +192,15 @@ static struct platform_driver msm_thermal_device_driver = {
 	},
 };
 
-int __init msm_thermal_device_init(void)
+static int __init msm_thermal_device_init(void)
 {
 	return platform_driver_register(&msm_thermal_device_driver);
 }
+
+static void __exit msm_thermal_device_exit(void)
+{
+	platform_driver_unregister(&msm_thermal_device_driver);
+}
+
+late_initcall(msm_thermal_device_init);
+module_exit(msm_thermal_device_exit);
