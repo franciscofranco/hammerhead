@@ -2022,7 +2022,10 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan,
 #ifdef CONFIG_PARTIALRESUME
 			tout_rx |= dhd_rx_suspend_again(skb);
 #else
-			tout_rx = DHD_PACKET_TIMEOUT_MS;
+			if (skb->dev->ieee80211_ptr && skb->dev->ieee80211_ptr->ps == false)
+				tout_rx = CUSTOM_DHCP_LOCK_xTIME * DHD_PACKET_TIMEOUT_MS;
+			else
+				tout_rx = DHD_PACKET_TIMEOUT_MS;
 #endif
 #ifdef DHD_WAKE_STATUS
 			if (unlikely(pkt_wake)) {
