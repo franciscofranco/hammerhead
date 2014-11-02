@@ -261,11 +261,9 @@ static struct notifier_block cpufreq_notifier = {
 	.notifier_call = cpufreq_callback,
 };
 
-static void screen_off_cap(bool nerf)
+static void screen_off_max_freq(int cpu, bool lower_max_freq)
 {
-	int cpu;
-
-	stats.freq = nerf ? MAX_FREQ_CAP : stats.saved_freq;
+	stats.freq = lower_max_freq ? MAX_FREQ_CAP : stats.saved_freq;
 
 	/*
 	 * This can be 0 on bootup if policy->max is not yet set
@@ -273,44 +271,42 @@ static void screen_off_cap(bool nerf)
 	if (!stats.freq)
 		stats.freq = LONG_MAX;
 
+	/*
+	 * Simple lock not for concurrent accesses, but to prevent
+	 * the notifier to trigger a policy limits verify unless we
+	 * requested it
+	 */
 	stats.screen_cap_lock = true;
-
-	for_each_online_cpu(cpu)
-		cpufreq_update_policy(cpu);
-
+	cpufreq_update_policy(cpu);
 	stats.screen_cap_lock = false;
 }
 
 static void mako_hotplug_suspend(struct work_struct *work)
 {
-	struct cpufreq_policy *policy = NULL;
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
 	int cpu;
-	int ret;
-
-	stats.counter = 0;
-
-	for_each_online_cpu(cpu) {
-		if (cpu < 2)
-			continue;
-
-		cpu_down(cpu);
-	}
 
 	/*
 	 * Save the current max freq before capping it to 1GHz
 	 * so that we can restore it after screen on.
-	 * Test for thermal throttle cases before merging on
-	 * production.
+	 * TODO: More tests for thermal throttle cases
 	 */
-	ret = cpufreq_get_policy(policy, 0);
-	if (ret)
+	if (!policy)
 		stats.saved_freq = LONG_MAX;
 	else
 		stats.saved_freq = policy->max;
 
-	stats.suspend = true;
+	for_each_online_cpu(cpu) {
+		if (cpu < 2) {
+			screen_off_max_freq(cpu, true);
+			continue;
+		}
 
-	screen_off_cap(true);
+		cpu_down(cpu);
+	}
+
+	stats.counter = 0;
+	stats.suspend = true;
 
 	pr_info("%s: suspend\n", MAKO_HOTPLUG);
 }
@@ -319,11 +315,11 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 {
 	int cpu;
 
-	screen_off_cap(false);
-
 	for_each_possible_cpu(cpu) {
-		if (!cpu || cpu_online(cpu))
+		if (cpu_online(cpu)) {
+			screen_off_max_freq(cpu, false);
 			continue;
+		}
 
 		cpu_up(cpu);
 	}
