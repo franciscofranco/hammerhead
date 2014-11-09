@@ -51,12 +51,14 @@ struct cpu_stats {
 	uint32_t saved_freq;
 	bool screen_cap_lock;
 	bool suspend;
+	bool booted;
 } stats = {
 	.counter = 0,
 	.timestamp = 0,
 	.freq = 0,
 	.screen_cap_lock = false,
 	.suspend = false,
+	.booted = false,
 };
 
 struct hotplug_tunables {
@@ -332,9 +334,12 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 static int lcd_notifier_callback(struct notifier_block *this,
 	unsigned long event, void *data)
 {
-	if (event == LCD_EVENT_ON_START)
-		queue_work_on(0, wq, &resume);
-	else if (event == LCD_EVENT_OFF_START)
+	if (event == LCD_EVENT_ON_START) {
+		if (!stats.booted)
+			stats.booted = true;
+		else
+			queue_work_on(0, wq, &resume);
+	} else if (event == LCD_EVENT_OFF_START)
 		queue_work_on(0, wq, &suspend);
 
 	return NOTIFY_OK;
