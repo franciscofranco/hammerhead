@@ -34,7 +34,7 @@
 #define DEFAULT_LOAD_THRESHOLD 80
 #define DEFAULT_HIGH_LOAD_COUNTER 10
 #define DEFAULT_MAX_LOAD_COUNTER 20
-#define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1500000
+#define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1497600
 #define DEFAULT_MIN_TIME_CPU_ONLINE 1
 #define DEFAULT_TIMER 1
 
@@ -128,9 +128,15 @@ static inline void cpus_offline_work(void)
 
 static inline bool cpus_cpufreq_work(void)
 {
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
 	struct hotplug_tunables *t = &tunables;
 	unsigned int current_freq = 0;
 	unsigned int cpu;
+
+	if (policy) {
+		if (policy->min >= t->cpufreq_unplug_limit)
+			return false;
+	}
 
 	for (cpu = 2; cpu < 4; cpu++)
 		current_freq += cpufreq_quick_get(cpu);
