@@ -280,13 +280,17 @@ static void screen_off_max_freq(int cpu, bool lower_max_freq)
 		stats.freq = LONG_MAX;
 
 	/*
-	 * Simple lock not for concurrent accesses, but to prevent
-	 * the notifier to trigger a policy limits verify unless we
-	 * requested it
+	 * Making sure the screen on max frequency limit is actually unlocked
+	 * and not left in a state where in some cases cpu1 gets stuck in
+	 * MAX_FREQ_CAP for some reason that I cannot reproduce
+	 * If you can reproduce it contact me (/proc/kmsg shows the log for that)
 	 */
-	stats.screen_cap_lock = true;
+	if (!lower_max_freq) {
+		if (stats.freq <= MAX_FREQ_CAP)
+			stats.freq = LONG_MAX;
+	}
+
 	cpufreq_update_policy(cpu);
-	stats.screen_cap_lock = false;
 }
 
 static void mako_hotplug_suspend(struct work_struct *work)
@@ -304,6 +308,12 @@ static void mako_hotplug_suspend(struct work_struct *work)
 	else
 		stats.saved_freq = policy->max;
 
+	/*
+         * Simple lock not for concurrent accesses, but to prevent
+         * the notifier to trigger a policy limits verify unless we
+         * requested it
+         */
+        stats.screen_cap_lock = true;
 	for_each_online_cpu(cpu) {
 		if (cpu < 2) {
 			screen_off_max_freq(cpu, true);
@@ -312,6 +322,7 @@ static void mako_hotplug_suspend(struct work_struct *work)
 
 		cpu_down(cpu);
 	}
+	stats.screen_cap_lock = false;
 
 	stats.counter = 0;
 	stats.suspend = true;
@@ -323,6 +334,7 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 {
 	int cpu;
 
+	stats.screen_cap_lock = true;
 	for_each_possible_cpu(cpu) {
 		if (cpu_online(cpu)) {
 			screen_off_max_freq(cpu, false);
@@ -331,6 +343,7 @@ static void __ref mako_hotplug_resume(struct work_struct *work)
 
 		cpu_up(cpu);
 	}
+	stats.screen_cap_lock = false;
 
 	stats.suspend = false;
 
