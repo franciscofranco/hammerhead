@@ -21,7 +21,7 @@
 #include <linux/time.h>
 #include <linux/slab.h>
 
-#define MIM_TIME_INTERVAL_US (150 * USEC_PER_MSEC)
+#define MIN_TIME_INTERVAL_US (50 * USEC_PER_MSEC)
 
 struct touchboost_inputopen {
 	struct input_handle *handle;
@@ -45,24 +45,14 @@ static void boost_input_event(struct input_handle *handle,
 {
 	u64 now;
 
-	now = ktime_to_us(ktime_get());
+	if ((type == EV_ABS)) {
+		now = ktime_to_us(ktime_get());
 
-	if (now - last_input_time < MIM_TIME_INTERVAL_US)
-		return;
+		if (now - last_input_time < MIN_TIME_INTERVAL_US)
+			return;
 
-	last_input_time = ktime_to_us(ktime_get());
-}
-
-static void boost_input_open(struct work_struct *w)
-{
-	struct touchboost_inputopen *io = 
-		container_of(w, struct touchboost_inputopen, inputopen_work);
-
-	int error;
-
-	error = input_open_device(io->handle);
-	if (error)
-		input_unregister_handle(io->handle);
+		last_input_time = ktime_to_us(ktime_get());
+	}
 }
 
 static int boost_input_connect(struct input_handler *handler,
@@ -71,20 +61,24 @@ static int boost_input_connect(struct input_handler *handler,
 	struct input_handle *handle;
 	int error;
 
-	handle = kzalloc(sizeof(struct input_handle), GFP_KERNEL);
-	if (!handle)
+	handle = kzalloc(sizeof(*handle), GFP_KERNEL);
+	if (handle == NULL)
 		return -ENOMEM;
 
 	handle->dev = dev;
 	handle->handler = handler;
-	handle->name = "touchboost";
+	handle->name = handler->name;
 
 	error = input_register_handle(handle);
 	if (error)
 		goto err;
 
-	touchboost_inputopen.handle = handle;
-	schedule_work(&touchboost_inputopen.inputopen_work);
+	error = input_open_device(handle);
+        if (error) {
+                input_unregister_handle(handle);
+		goto err;
+	}
+
 	return 0;
 
 err:
@@ -100,27 +94,13 @@ static void boost_input_disconnect(struct input_handle *handle)
 }
 
 static const struct input_device_id boost_ids[] = {
-	/* multi-touch touchscreen */
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
-			INPUT_DEVICE_ID_MATCH_ABSBIT,
-		.evbit = { BIT_MASK(EV_ABS) },
-		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
-			BIT_MASK(ABS_MT_POSITION_X) |
-			BIT_MASK(ABS_MT_POSITION_Y) },
-	},
-	/* touchpad */
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_KEYBIT |
-			INPUT_DEVICE_ID_MATCH_ABSBIT,
-		.keybit = { [BIT_WORD(BTN_TOUCH)] = BIT_MASK(BTN_TOUCH) },
-		.absbit = { [BIT_WORD(ABS_X)] =
-			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
-	},
-	/* Keypad */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
-		.evbit = { BIT_MASK(EV_KEY) },
+		.evbit = { BIT_MASK(EV_ABS) },
+		/* assumption: MT_.._X & MT_.._Y are in the same long */
+		.absbit = { [BIT_WORD(ABS_MT_POSITION_X)] =
+				BIT_MASK(ABS_MT_POSITION_X) |
+				BIT_MASK(ABS_MT_POSITION_Y) },
 	},
 	{ },
 };
@@ -135,9 +115,8 @@ static struct input_handler boost_input_handler = {
 
 static int __init init(void)
 {
-	INIT_WORK(&touchboost_inputopen.inputopen_work, boost_input_open);
-
-	input_register_handler(&boost_input_handler);
+	if (input_register_handler(&boost_input_handler))
+		pr_info("Unable to register the input handler\n");
 
 	return 0;
 }
