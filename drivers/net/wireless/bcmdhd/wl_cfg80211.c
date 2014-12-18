@@ -3271,6 +3271,7 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 			wait_cnt--;
 			OSL_SLEEP(10);
 		}
+		wl_clr_drv_status(wl, DISCONNECTING, dev);
 	}
 
 	/* Clean BSSID */
