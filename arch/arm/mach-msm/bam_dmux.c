@@ -490,6 +490,8 @@ static void bam_mux_process_data(struct sk_buff *rx_skb)
 	unsigned long flags;
 	struct bam_mux_hdr *rx_hdr;
 	unsigned long event_data;
+	void (*notify)(void *, int, unsigned long);
+	void *priv;
 
 	rx_hdr = (struct bam_mux_hdr *)rx_skb->data;
 
@@ -499,15 +501,19 @@ static void bam_mux_process_data(struct sk_buff *rx_skb)
 	rx_skb->truesize = rx_hdr->pkt_len + sizeof(struct sk_buff);
 
 	event_data = (unsigned long)(rx_skb);
+	notify = NULL;
+	priv = NULL;
 
 	spin_lock_irqsave(&bam_ch[rx_hdr->ch_id].lock, flags);
-	if (bam_ch[rx_hdr->ch_id].notify)
-		bam_ch[rx_hdr->ch_id].notify(
-			bam_ch[rx_hdr->ch_id].priv, BAM_DMUX_RECEIVE,
-							event_data);
+	if (bam_ch[rx_hdr->ch_id].notify) {
+		notify = bam_ch[rx_hdr->ch_id].notify;
+		priv = bam_ch[rx_hdr->ch_id].priv;
+	}
+	spin_unlock_irqrestore(&bam_ch[rx_hdr->ch_id].lock, flags);
+	if (notify)
+		notify(priv, BAM_DMUX_RECEIVE, event_data);
 	else
 		dev_kfree_skb_any(rx_skb);
-	spin_unlock_irqrestore(&bam_ch[rx_hdr->ch_id].lock, flags);
 
 	queue_rx();
 }
