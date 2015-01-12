@@ -752,7 +752,8 @@ static int thread_migration_notify(struct notifier_block *nb,
 				unsigned long target_cpu, void *arg)
 {
 	unsigned long flags;
-	unsigned int boost_freq = CPU_SYNC_FREQ;
+	unsigned int boost_freq;
+	unsigned int sync_freq = CPU_SYNC_FREQ;
 	struct cpufreq_interactive_cpuinfo *target, *source;
 	target = &per_cpu(cpuinfo, target_cpu);
 	source = &per_cpu(cpuinfo, (int)arg);
@@ -764,10 +765,12 @@ static int thread_migration_notify(struct notifier_block *nb,
 	if ((int)arg == target_cpu)
 		return NOTIFY_OK;
 
+	if (source->policy->util <= 10)
+		return NOTIFY_OK;
+
 	if (source->policy->cur > target->policy->cur)
 	{
-		if (source->policy->cur > boost_freq)
-			boost_freq = source->policy->cur;
+		boost_freq = max(sync_freq, source->policy->cur);
 
 		target->target_freq = boost_freq;
 
