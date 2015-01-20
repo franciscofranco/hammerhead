@@ -106,15 +106,6 @@ config ANDROID_LMK_ADJ_RBTREE
 	    Use oom_score_adj rbtree to select the best proecss to kill
 	    when system in low memory status.
 
-config ANDROID_INTF_ALARM_DEV
-	bool "Android alarm driver"
-	depends on RTC_CLASS
-	default n
-	help
-	  Provides non-wakeup and rtc backed wakeup alarms based on rtc or
-	  elapsed realtime, and a non-wakeup alarm on the monotonic clock.
-	  Also exports the alarm interface to user-space.
-
 endif # if ANDROID
 
 endmenu
