@@ -34,13 +34,13 @@
 #define DEFAULT_LOAD_THRESHOLD 80
 #define DEFAULT_HIGH_LOAD_COUNTER 10
 #define DEFAULT_MAX_LOAD_COUNTER 20
-#define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1497600
+#define DEFAULT_CPUFREQ_UNPLUG_LIMIT 1800000
 #define DEFAULT_MIN_TIME_CPU_ONLINE 1
 #define DEFAULT_TIMER 1
 
-#define MIN_CPU_UP_US (1000 * USEC_PER_MSEC)
+#define MIN_CPU_UP_US (500 * USEC_PER_MSEC)
 #define NUM_POSSIBLE_CPUS num_possible_cpus()
-#define HIGH_LOAD (90 << 1)
+#define HIGH_LOAD (95 << 1)
 #define MAX_FREQ_CAP 1036800
 
 struct cpu_stats {
@@ -147,15 +147,16 @@ static inline bool cpus_cpufreq_work(void)
 static void cpu_revive(unsigned int load)
 {
 	struct hotplug_tunables *t = &tunables;
+	unsigned int counter_hysteria = 5;
 
 	/*
 	 * we should care about a very high load spike and online the
-	 * cpu in question. If the device is under stress for at least 200ms
-	 * online the cpu, no questions asked. 200ms here equals two samples
+	 * cpu in question. If the device is under stress for at least 500ms
+	 * online the cpu, no questions asked. 500ms here equals five samples
 	 */
-	if (load >= HIGH_LOAD && stats.counter >= 2)
+	if (load >= HIGH_LOAD && stats.counter >= counter_hysteria)
 		goto online_all;
-	else if (!(stats.counter >= t->high_load_counter))
+	else if (stats.counter < t->high_load_counter)
 		return;
 
 online_all:
@@ -181,7 +182,7 @@ static void cpu_smash(void)
 
 	/*
 	 * Let's not unplug this cpu unless its been online for longer than
-	 * 1sec to avoid consecutive ups and downs if the load is varying
+	 * 500ms to avoid consecutive ups and downs if the load is varying
 	 * closer to the threshold point.
 	 */
 	if (t->min_time_cpu_online > 1)
@@ -354,12 +355,19 @@ static int lcd_notifier_callback(struct notifier_block *this,
 	unsigned long event, void *data)
 {
 	if (event == LCD_EVENT_ON_START) {
+		if (!stats.suspend)
+			return NOTIFY_OK;
+
 		if (!stats.booted)
 			stats.booted = true;
 		else
 			queue_work_on(0, wq, &resume);
-	} else if (event == LCD_EVENT_OFF_START)
+	} else if (event == LCD_EVENT_OFF_START) {
+		if (stats.suspend)
+                        return NOTIFY_OK;
+
 		queue_work_on(0, wq, &suspend);
+	}
 
 	return NOTIFY_OK;
 }
