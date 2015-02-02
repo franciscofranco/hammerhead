@@ -1105,6 +1105,7 @@ __rt_mutex_slowlock(struct rt_mutex *lock, int state,
 		set_current_state(state);
 	}
 
+	__set_current_state(TASK_RUNNING);
 	return ret;
 }
 
@@ -1163,9 +1164,8 @@ rt_mutex_slowlock(struct rt_mutex *lock, int state,
 	ret = task_blocks_on_rt_mutex(lock, &waiter, current, chwalk);
 
 	if (likely(!ret))
+		/* sleep on the mutex */
 		ret = __rt_mutex_slowlock(lock, state, timeout, &waiter);
-
-	set_current_state(TASK_RUNNING);
 
 	if (unlikely(ret)) {
 		remove_waiter(lock, &waiter);
@@ -1601,9 +1601,8 @@ int rt_mutex_finish_proxy_lock(struct rt_mutex *lock,
 
 	set_current_state(TASK_INTERRUPTIBLE);
 
+	/* sleep on the mutex */
 	ret = __rt_mutex_slowlock(lock, TASK_INTERRUPTIBLE, to, waiter);
-
-	set_current_state(TASK_RUNNING);
 
 	if (unlikely(ret))
 		remove_waiter(lock, waiter);
