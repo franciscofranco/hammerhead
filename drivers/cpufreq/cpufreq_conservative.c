@@ -53,8 +53,8 @@ static unsigned int min_sampling_rate;
 #define MAX_SAMPLING_DOWN_FACTOR		(10)
 #define TRANSITION_LATENCY_LIMIT		(10 * 1000 * 1000)
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE	(10000)
-#define BOOST_DURATION_US			(500000)
-#define BOOST_FREQ_VAL				(1000000)
+#define BOOST_DURATION_US			(40000)
+#define BOOST_FREQ_VAL				(1497600)
 
 static void do_dbs_timer(struct work_struct *work);
 
