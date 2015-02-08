@@ -93,12 +93,16 @@ static struct dbs_tuners {
 	unsigned int down_threshold;
 	unsigned int ignore_nice;
 	unsigned int freq_step;
+	unsigned int input_boost_freq;
+	u64 input_boost_duration;
 } dbs_tuners_ins = {
 	.up_threshold = DEF_FREQUENCY_UP_THRESHOLD,
 	.down_threshold = DEF_FREQUENCY_DOWN_THRESHOLD,
 	.sampling_down_factor = DEF_SAMPLING_DOWN_FACTOR,
 	.ignore_nice = 0,
 	.freq_step = 5,
+	.input_boost_freq = BOOST_FREQ_VAL,
+	.input_boost_duration = BOOST_DURATION_US,
 };
 
 /* keep track of frequency transitions */
@@ -155,6 +159,8 @@ show_one(up_threshold, up_threshold);
 show_one(down_threshold, down_threshold);
 show_one(ignore_nice_load, ignore_nice);
 show_one(freq_step, freq_step);
+show_one(input_boost_freq, input_boost_freq);
+show_one(input_boost_duration, input_boost_duration);
 
 static ssize_t store_sampling_down_factor(struct kobject *a,
 					  struct attribute *b,
@@ -267,12 +273,48 @@ static ssize_t store_freq_step(struct kobject *a, struct attribute *b,
 	return count;
 }
 
+static ssize_t store_input_boost_freq(struct kobject *a, struct attribute *b,
+                               const char *buf, size_t count)
+{
+        unsigned int input;
+        int ret;
+        ret = sscanf(buf, "%u", &input);
+
+        if (ret != 1)
+                return -EINVAL;
+
+        if (input < 0)
+                input = 0;
+
+        dbs_tuners_ins.input_boost_freq = input;
+        return count;
+}
+
+static ssize_t store_input_boost_duration(struct kobject *a, struct attribute *b,
+                               const char *buf, size_t count)
+{
+        unsigned int input;
+        int ret;
+        ret = sscanf(buf, "%u", &input);
+
+        if (ret != 1)
+                return -EINVAL;
+
+        if (input < 0)
+                input = 0;
+
+        dbs_tuners_ins.input_boost_duration = input;
+        return count;
+}
+
 define_one_global_rw(sampling_rate);
 define_one_global_rw(sampling_down_factor);
 define_one_global_rw(up_threshold);
 define_one_global_rw(down_threshold);
 define_one_global_rw(ignore_nice_load);
 define_one_global_rw(freq_step);
+define_one_global_rw(input_boost_freq);
+define_one_global_rw(input_boost_duration);
 
 static struct attribute *dbs_attributes[] = {
 	&sampling_rate_min.attr,
@@ -282,6 +324,8 @@ static struct attribute *dbs_attributes[] = {
 	&down_threshold.attr,
 	&ignore_nice_load.attr,
 	&freq_step.attr,
+	&input_boost_freq.attr,
+	&input_boost_duration.attr,
 	NULL
 };
 
@@ -304,7 +348,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 	policy = this_dbs_info->cur_policy;
 	now = ktime_to_us(ktime_get());
-	boosted = now < (get_input_time() + BOOST_DURATION_US);
+	boosted = now < (get_input_time() + dbs_tuners_ins.input_boost_duration);
 
 	/*
 	 * Every sampling_rate, we check, if current idle time is less
@@ -384,8 +428,8 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		if (unlikely(freq_target == 0))
 			freq_target = 5;
 
-		if (boosted && policy->cur < BOOST_FREQ_VAL)
-			this_dbs_info->requested_freq = BOOST_FREQ_VAL;
+		if (boosted && policy->cur < dbs_tuners_ins.input_boost_freq)
+			this_dbs_info->requested_freq = dbs_tuners_ins.input_boost_freq;
 		else
 			this_dbs_info->requested_freq += freq_target;
 		if (this_dbs_info->requested_freq > policy->max)
@@ -402,7 +446,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	 * policy. To be safe, we focus 10 points under the threshold.
 	 */
 	if (max_load < (dbs_tuners_ins.down_threshold)) {
-		if (boosted && policy->cur <= BOOST_FREQ_VAL)
+		if (boosted && policy->cur <= dbs_tuners_ins.input_boost_freq)
 			return;
 
 		freq_target = (dbs_tuners_ins.freq_step * policy->max) / 100;
