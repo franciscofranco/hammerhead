@@ -297,12 +297,10 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	unsigned int load = 0;
 	unsigned int max_load = 0;
 	unsigned int freq_target;
-
 	struct cpufreq_policy *policy;
 	unsigned int j;
-
-	u64 now;
 	bool boosted;
+	u64 now;
 
 	policy = this_dbs_info->cur_policy;
 	now = ktime_to_us(ktime_get());
@@ -485,7 +483,7 @@ static int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 			j_dbs_info->prev_cpu_idle = get_cpu_idle_time(j,
 						&j_dbs_info->prev_cpu_wall, true);
-			if (dbs_tuners_ins.ignore_nice) {
+			if (dbs_tuners_ins.ignore_nice)
 				j_dbs_info->prev_cpu_nice =
 						kcpustat_cpu(j).cpustat[CPUTIME_NICE];
 		}
