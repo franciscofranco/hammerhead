@@ -21,8 +21,6 @@
 #include <linux/time.h>
 #include <linux/slab.h>
 
-#define MIN_TIME_INTERVAL_US (50 * USEC_PER_MSEC)
-
 struct touchboost_inputopen {
 	struct input_handle *handle;
 	struct work_struct inputopen_work;
@@ -43,16 +41,8 @@ inline u64 get_input_time(void)
 static void boost_input_event(struct input_handle *handle,
                 unsigned int type, unsigned int code, int value)
 {
-	u64 now;
-
-	if ((type == EV_ABS)) {
-		now = ktime_to_us(ktime_get());
-
-		if (now - last_input_time < MIN_TIME_INTERVAL_US)
-			return;
-
+	if ((type == EV_ABS))
 		last_input_time = ktime_to_us(ktime_get());
-	}
 }
 
 static int boost_input_connect(struct input_handler *handler,
