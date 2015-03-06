@@ -161,7 +161,7 @@ online_all:
 	stats.timestamp = ktime_to_us(ktime_get());
 }
 
-static void cpu_smash(void)
+static void cpu_smash(unsigned int load)
 {
 	struct hotplug_tunables *t = &tunables;
 	u64 extra_time = MIN_CPU_UP_US;
@@ -186,6 +186,13 @@ static void cpu_smash(void)
 		extra_time = t->min_time_cpu_online * MIN_CPU_UP_US;
 
 	if (ktime_to_us(ktime_get()) < stats.timestamp + extra_time)
+		return;
+
+	/*
+	 * If current load is higher than our threshold we can skip offlining
+	 * on the next sample
+	 */
+	if (load >= t->load_threshold)
 		return;
 
 	cpus_offline_work();
@@ -233,7 +240,7 @@ static void __ref decide_hotplug_func(struct work_struct *work)
 			--stats.counter;
 
 		if (online_cpus > 2)
-			cpu_smash();
+			cpu_smash(cur_load);
 	}
 
 reschedule:
