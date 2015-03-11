@@ -563,11 +563,20 @@ static int edp_event_thread(void *data)
 	struct mdss_edp_drv_pdata *ep;
 	unsigned long flag;
 	u32 todo = 0;
+	int ret;
 
 	ep = (struct mdss_edp_drv_pdata *)data;
 
 	while (1) {
-		wait_event(ep->event_q, (ep->event_pndx != ep->event_gndx));
+		ret = wait_event_interruptible(ep->event_q,
+			(ep->event_pndx != ep->event_gndx) ||
+			kthread_should_stop());
+
+		if (ret) {
+			pr_debug("%s: interrupted", __func__);
+                        continue;
+		}
+
 		spin_lock_irqsave(&ep->event_lock, flag);
 		if (ep->event_pndx == ep->event_gndx) {
 			spin_unlock_irqrestore(&ep->event_lock, flag);
