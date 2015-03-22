@@ -74,7 +74,7 @@
 static bool backlight_dimmer = true;
 module_param(backlight_dimmer, bool, 0664);
 
-static int min_brightness = 5;
+static int min_brightness = 1;
 module_param(min_brightness, int, 0664);
 
 enum {
@@ -216,6 +216,11 @@ static void lm3630_set_brightness_reg(struct lm3630_device *dev, int level)
 	}
 }
 
+static inline int curve(int level)
+{
+	return 5 + ((level - 15) * 250 / 235);
+}
+
 static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 {
 	struct lm3630_device *dev = i2c_get_clientdata(client);
@@ -227,28 +232,17 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 	dev->bl_dev->props.brightness = level;
 
 	if (backlight_dimmer) {
-		/*
-		 * Little code optimisation here because 99% of the time level won't be
-		 * 0 so make the compiler optimise this code path, just because we can
-		 */
 		if (unlikely(!level)) {
 			lm3630_write_reg(client, CONTROL_REG, BL_OFF);
 		} else {
-			if (level < 15) {
-				if (level < min_brightness)
-					level = min_brightness;
+			brightness = curve(level);
 
-				max_current = max(level - dev->min_brightness, 0);
-				brightness = level - dev->min_brightness;
-				
-				if (brightness < min_brightness) {
-					brightness = min_brightness;
-				}
-			} else {
-				brightness = 
-					(level < 89) ? (5 + ((level - 15) * 250 / 235)) : level;
-			}
-	
+			if (brightness < min_brightness)
+				brightness = min_brightness;
+
+			if (brightness < 18)
+				max_current = max(brightness, 1);
+
 			lm3630_set_max_current_reg(dev, max_current);
 			lm3630_set_brightness_reg(dev, brightness);
 		}
@@ -258,7 +252,7 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 				level = dev->min_brightness;
 			else if (level > dev->max_brightness)
 				level = dev->max_brightness;
-	
+
 			if (dev->blmap) {
 				if (level < dev->blmap_size)
 					lm3630_set_brightness_reg(dev, dev->blmap[level]);
