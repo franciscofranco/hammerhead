@@ -74,7 +74,7 @@
 static bool backlight_dimmer = true;
 module_param(backlight_dimmer, bool, 0664);
 
-static int min_brightness = 1;
+static int min_brightness = 3;
 module_param(min_brightness, int, 0664);
 
 enum {
@@ -237,11 +237,13 @@ static void lm3630_set_main_current_level(struct i2c_client *client, int level)
 		} else {
 			brightness = curve(level);
 
-			if (brightness < min_brightness)
+			if (brightness > dev->max_brightness)
+				brightness = dev->max_brightness;
+			else if (brightness < min_brightness)
 				brightness = min_brightness;
 
-			if (brightness < 18)
-				max_current = max(brightness, 1);
+			if (brightness < dev->max_current)
+				max_current = max(brightness, 0);
 
 			lm3630_set_max_current_reg(dev, max_current);
 			lm3630_set_brightness_reg(dev, brightness);
