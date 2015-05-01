@@ -55,6 +55,7 @@ static unsigned int min_sampling_rate;
 #define MICRO_FREQUENCY_MIN_SAMPLE_RATE	(10000)
 #define BOOST_DURATION_US			(40000)
 #define BOOST_FREQ_VAL				(1497600)
+#define DEFAULT_MIN_LOAD			(5)
 
 static void do_dbs_timer(struct work_struct *work);
 
@@ -430,16 +431,16 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 
 		this_dbs_info->requested_freq += freq_target;
 
-		if (boosted)
-			this_dbs_info->requested_freq
-				= max(dbs_tuners_ins.input_boost_freq,
-					this_dbs_info->requested_freq);
-
 		if (this_dbs_info->requested_freq > policy->max)
 			this_dbs_info->requested_freq = policy->max;
 
+		if (boosted)
+                        this_dbs_info->requested_freq
+                                = max(dbs_tuners_ins.input_boost_freq,
+                                        this_dbs_info->requested_freq);
+
 		__cpufreq_driver_target(policy, this_dbs_info->requested_freq,
-			CPUFREQ_RELATION_H);
+			CPUFREQ_RELATION_C);
 		return;
 	}
 
@@ -460,6 +461,9 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 		 */
 		if (policy->cur == policy->min)
 			return;
+
+		if (load < DEFAULT_MIN_LOAD)
+			this_dbs_info->requested_freq = policy->min;
 
 		if (boosted)
                         this_dbs_info->requested_freq
