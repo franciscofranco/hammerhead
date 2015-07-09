@@ -504,6 +504,7 @@ struct wl_priv {
 	struct list_head net_list;     /* used for struct net_info */
 	spinlock_t eq_lock;	/* for event queue synchronization */
 	spinlock_t cfgdrv_lock;	/* to protect scan status (and others if needed) */
+	spinlock_t cfgp2p_lock;	/* used for p2p interface sync */
 	struct completion act_frm_scan;
 	struct completion iface_disable;
 	struct completion wait_next_af;

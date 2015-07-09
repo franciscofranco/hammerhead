@@ -341,12 +341,15 @@ wl_cfgp2p_init_priv(struct wl_priv *wl)
 void
 wl_cfgp2p_deinit_priv(struct wl_priv *wl)
 {
+	unsigned long flags;
 	CFGP2P_DBG(("In\n"));
+	spin_lock_irqsave(&wl->cfgp2p_lock, flags);
 	if (wl->p2p) {
 		kfree(wl->p2p);
 		wl->p2p = NULL;
 	}
 	wl->p2p_supported = 0;
+	spin_unlock_irqrestore(&wl->cfgp2p_lock, flags);
 }
 /*
  * Set P2P functions into firmware
@@ -2659,3 +2662,14 @@ wl_cfgp2p_del_p2p_disc_if(struct wireless_dev *wdev)
 	return 0;
 }
 #endif /* WL_CFG80211_P2P_DEV_IF */
+
+int
+wl_cfgp2p_check_enabled(struct wl_priv *wl)
+{
+	unsigned long flags;
+	int ret;
+	spin_lock_irqsave(&wl->cfgp2p_lock, flags);
+	ret = wl->p2p_supported;
+	spin_unlock_irqrestore(&wl->cfgp2p_lock, flags);
+	return ret;
+}
