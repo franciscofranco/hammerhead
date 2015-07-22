@@ -444,7 +444,7 @@ void msm_gpio_show_resume_irq(void)
 		intstat = __msm_gpio_get_intr_status(i);
 		if (intstat) {
 			irq = msm_gpio_to_irq(&msm_gpio.gpio_chip, i);
-			log_wakeup_reason(irq);
+			//log_wakeup_reason(irq);
 		}
 	}
 	spin_unlock_irqrestore(&tlmm_lock, irq_flags);
