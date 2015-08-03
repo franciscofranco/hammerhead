@@ -9248,16 +9248,7 @@ static s32 wl_escan_handler(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 		}
 		wl_escan_increment_sync_id(wl, SCAN_BUF_NEXT);
 	}
-#ifdef GSCAN_SUPPORT
-	else if ((status == WLC_E_STATUS_ABORT) || (status == WLC_E_STATUS_NEWSCAN)) {
-		if (status == WLC_E_STATUS_NEWSCAN) {
-			WL_ERR(("WLC_E_STATUS_NEWSCAN : scan_request[%p]\n", wl->scan_request));
-			WL_ERR(("sync_id[%d], bss_count[%d]\n", escan_result->sync_id,
-				escan_result->bss_count));
-		}
-#else
 	else if (status == WLC_E_STATUS_ABORT) {
-#endif /* GSCAN_SUPPORT */
 		wl->escan_info.escan_state = WL_ESCAN_STATE_IDLE;
 		wl_escan_print_sync_id(status, escan_result->sync_id,
 			wl->escan_info.cur_sync_id);
