@@ -3254,7 +3254,8 @@ wl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				WL_ERR(("error (%d)\n", err));
 				return err;
 			}
-			wait_cnt = 500/10;
+			/* wait for disconnection termination, upto 200 ms */
+			wait_cnt = 200/10;
 			while (wl_get_drv_status(wl, DISCONNECTING, dev) && wait_cnt) {
 				WL_DBG(("Waiting for disconnection terminated, wait_cnt: %d\n",
 					wait_cnt));
@@ -3481,10 +3482,19 @@ wl_cfg80211_disconnect(struct wiphy *wiphy, struct net_device *dev,
 	RETURN_EIO_IF_NOT_UP(wl);
 	act = *(bool *) wl_read_prof(wl, dev, WL_PROF_ACT);
 	curbssid = wl_read_prof(wl, dev, WL_PROF_BSSID);
+#ifdef ESCAN_RESULT_PATCH
+	if (wl_get_drv_status(wl, CONNECTING, dev) && curbssid &&
+			(memcmp(curbssid, connect_req_bssid, ETHER_ADDR_LEN) == 0)) {
+		WL_ERR(("Disconnecting from connecting device: " MACDBG "\n",
+			MAC2STRDBG(curbssid)));
+		act = true;
+	}
+#endif /* ESCAN_RESULT_PATCH */
+
 	if (act) {
 		/*
-		* Cancel ongoing scan to sync up with sme state machine of cfg80211.
-		*/
+		 * Cancel ongoing scan to sync up with sme state machine of cfg80211.
+		 */
 		/* Let scan aborted by F/W */
 		if (wl->scan_request) {
 			wl_notify_escan_complete(wl, dev, true, true);
@@ -8976,16 +8986,19 @@ static s32 wl_notify_escan_complete(struct wl_priv *wl,
 	struct net_device *dev;
 
 	WL_DBG(("Enter \n"));
+
+	mutex_lock(&wl->scan_complete);
+
 	if (!ndev) {
 		WL_ERR(("ndev is null\n"));
 		err = BCME_ERROR;
-		return err;
+		goto out;
 	}
 
 	if (wl->escan_info.ndev != ndev) {
 		WL_ERR(("ndev is different %p %p\n", wl->escan_info.ndev, ndev));
 		err = BCME_ERROR;
-		return err;
+		goto out;
 	}
 
 	if (wl->scan_request) {
@@ -9034,6 +9047,9 @@ static s32 wl_notify_escan_complete(struct wl_priv *wl,
 		wl_clr_p2p_status(wl, SCANNING);
 	wl_clr_drv_status(wl, SCANNING, dev);
 	spin_unlock_irqrestore(&wl->cfgdrv_lock, flags);
+
+out:
+	mutex_unlock(&wl->scan_complete);
 	return err;
 }
 
@@ -9574,6 +9590,7 @@ static s32 wl_init_priv(struct wl_priv *wl)
 	wl_init_event_handler(wl);
 	mutex_init(&wl->usr_sync);
 	mutex_init(&wl->event_sync);
+	mutex_init(&wl->scan_complete);
 	err = wl_init_scan(wl);
 	if (err)
 		return err;
@@ -10554,8 +10571,10 @@ s32 wl_cfg80211_up(void *para)
 	dhd = (dhd_pub_t *)(wl->pub);
 	if (!(dhd->op_mode & DHD_FLAG_HOSTAP_MODE)) {
 		err = wl_cfg80211_attach_post(wl_to_prmry_ndev(wl));
-		if (unlikely(err))
+		if (unlikely(err)) {
+			mutex_unlock(&wl->usr_sync);
 			return err;
+		}
 	}
 	err = __wl_cfg80211_up(wl);
 	if (unlikely(err))
