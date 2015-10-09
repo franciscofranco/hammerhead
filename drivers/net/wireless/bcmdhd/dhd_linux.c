@@ -292,7 +292,7 @@ typedef struct dhd_info {
 #ifdef DHDTHREAD
 	/* Thread based operation */
 	bool threads_only;
-	struct semaphore sdsem;
+	struct mutex	sdmutex;
 
 	tsk_ctl_t	thr_dpc_ctl;
 	tsk_ctl_t	thr_wdt_ctl;
@@ -3488,7 +3488,7 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 
 #ifdef DHDTHREAD
 	/* Initialize thread based operation and lock */
-	sema_init(&dhd->sdsem, 1);
+	mutex_init(&dhd->sdmutex);
 	if ((dhd_watchdog_prio >= 0) && (dhd_dpc_prio >= 0)) {
 		dhd->threads_only = TRUE;
 	}
@@ -5357,7 +5357,7 @@ dhd_os_sdlock(dhd_pub_t *pub)
 
 #ifdef DHDTHREAD
 	if (dhd->threads_only)
-		down(&dhd->sdsem);
+		mutex_lock(&dhd->sdmutex);
 	else
 #endif /* DHDTHREAD */
 	spin_lock_bh(&dhd->sdlock);
@@ -5372,7 +5372,7 @@ dhd_os_sdunlock(dhd_pub_t *pub)
 
 #ifdef DHDTHREAD
 	if (dhd->threads_only)
-		up(&dhd->sdsem);
+		mutex_unlock(&dhd->sdmutex);
 	else
 #endif /* DHDTHREAD */
 	spin_unlock_bh(&dhd->sdlock);
