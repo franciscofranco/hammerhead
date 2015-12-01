@@ -84,3 +84,6 @@ GTAGS
 *.orig
 *~
 \#*#
+arch/arm/crypto/sha256-core.S
+arch/arm/mach-msm/smd_rpc_sym.c
+build.sh
