@@ -12,6 +12,7 @@
 #include <linux/scatterlist.h>
 
 struct scsi_cmnd;
+struct device;
 
 /*
  * The maximum number of SG segments that we will put inside a
