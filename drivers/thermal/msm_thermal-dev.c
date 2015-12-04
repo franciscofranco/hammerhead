@@ -118,14 +118,6 @@ static long msm_thermal_ioctl_process(struct file *filep, unsigned int cmd,
 		goto process_exit;
 
 	switch (cmd) {
-	case MSM_THERMAL_SET_CPU_MAX_FREQUENCY:
-		ret = msm_thermal_set_frequency(query.cpu_freq.cpu_num,
-			query.cpu_freq.freq_req, true);
-		break;
-	case MSM_THERMAL_SET_CPU_MIN_FREQUENCY:
-		ret = msm_thermal_set_frequency(query.cpu_freq.cpu_num,
-			query.cpu_freq.freq_req, false);
-		break;
 	default:
 		ret = -ENOTTY;
 		goto process_exit;
