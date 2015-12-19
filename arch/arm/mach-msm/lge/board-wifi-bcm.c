@@ -29,6 +29,9 @@
 #include <linux/spinlock.h>
 #include <linux/wlan_plat.h>
 #include <linux/fs.h>
+#ifdef CONFIG_PARTIALRESUME
+#include <linux/lcd_notify.h>
+#endif
 #include <asm/io.h>
 #include <mach/board_lge.h>
 
@@ -56,6 +59,9 @@
 
 static int gpio_power = WLAN_POWER;
 static int gpio_hostwake = WLAN_HOSTWAKE;
+#ifdef CONFIG_PARTIALRESUME
+static bool interactive = true;
+#endif
 
 static struct sk_buff *wlan_static_skb[WLAN_SKB_BUF_NUM];
 
@@ -734,7 +740,8 @@ static bool bcm_wifi_process_partial_resume(int action)
 		bcm_suspend = PR_INIT_STATE;
 		break;
 	case WIFI_PR_WD_INIT:
-		INIT_COMPLETION(bcm_wd_comp);
+		if (!interactive)
+			INIT_COMPLETION(bcm_wd_comp);
 		break;
 	case WIFI_PR_WD_COMPLETE:
 		complete(&bcm_wd_comp);
@@ -815,6 +822,31 @@ static struct partial_resume wlan_pr = {
 	.partial_resume = bcm_wifi_partial_resume,
 };
 
+static int lcd_notifier_callback(struct notifier_block *nb,
+				 unsigned long event, void *data)
+{
+	switch (event) {
+	case LCD_EVENT_ON_START:
+		interactive = true;
+		break;
+	case LCD_EVENT_ON_END:
+		break;
+	case LCD_EVENT_OFF_START:
+		break;
+	case LCD_EVENT_OFF_END:
+		interactive = false;
+		break;
+	default:
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block lcd_notifier = {
+	.notifier_call = lcd_notifier_callback,
+};
+
 int __init wlan_partial_resume_init(void)
 {
 	int rc;
@@ -829,6 +861,7 @@ int __init wlan_partial_resume_init(void)
 	rc = register_partial_resume(&smd_pr);
 	pr_debug("%s: after registering %pF: %d\n", __func__,
 		 smd_pr.partial_resume, rc);
+	rc = lcd_register_client(&lcd_notifier);
 	return rc;
 }
 
