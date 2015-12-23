@@ -2125,7 +2125,7 @@ dhd_rx_frame(dhd_pub_t *dhdp, int ifidx, void *pktbuf, int numpkt, uint8 chan,
 	DHD_OS_WAKE_LOCK_CTRL_TIMEOUT_ENABLE(dhdp, tout_ctrl);
 
 #ifdef CONFIG_PARTIALRESUME
-	if (tout_rx || tout_ctrl)
+	if ((tout_rx || tout_ctrl) && dhd->pub.up)
 		wifi_process_partial_resume(WIFI_PR_VOTE_FOR_RESUME);
 #endif
 }
@@ -6567,7 +6567,7 @@ int dhd_os_wd_wake_lock(dhd_pub_t *pub)
 			wake_lock(&dhd->wl_wdwake);
 #endif
 #ifdef CONFIG_PARTIALRESUME
-		if (!dhd->wakelock_wd_counter)
+		if (!dhd->wakelock_wd_counter && pub->up)
 			wifi_process_partial_resume(WIFI_PR_WD_INIT);
 #endif
 		dhd->wakelock_wd_counter++;

@@ -9041,7 +9041,7 @@ static s32 wl_escan_handler(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 	u8 *p2p_dev_addr = NULL;
 
 	WL_DBG((" enter event type : %d, status : %d \n",
-		ntoh32(e->event_type), ntoh32(e->status)));
+		ntoh32(e->event_type), status));
 
 	ndev = cfgdev_to_wlc_ndev(cfgdev, wl);
 
