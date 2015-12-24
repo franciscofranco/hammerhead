@@ -59,9 +59,6 @@
 
 static int gpio_power = WLAN_POWER;
 static int gpio_hostwake = WLAN_HOSTWAKE;
-#ifdef CONFIG_PARTIALRESUME
-static bool interactive = true;
-#endif
 
 static struct sk_buff *wlan_static_skb[WLAN_SKB_BUF_NUM];
 
@@ -684,6 +681,7 @@ static DECLARE_COMPLETION(bcm_pk_comp);
 static DECLARE_COMPLETION(bcm_wd_comp);
 static int bcm_suspend = PR_INIT_STATE;
 static spinlock_t bcm_lock;
+static bool interactive = true;
 
 /*
  * Partial Resume State Machine:
@@ -725,7 +723,8 @@ static bool bcm_wifi_process_partial_resume(int action)
 		break;
 	case WIFI_PR_VOTE_FOR_RESUME:
 		bcm_suspend = PR_RESUME_OK_STATE;
-		complete(&bcm_pk_comp);
+		if (!completion_done(&bcm_pk_comp))
+			complete(&bcm_pk_comp);
 		break;
 	case WIFI_PR_VOTE_FOR_SUSPEND:
 		if (bcm_suspend == PR_IN_RESUME_STATE)
