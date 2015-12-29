@@ -5293,12 +5293,17 @@ static void nohz_idle_balance(int this_cpu, enum cpu_idle_type idle)
 		if (need_resched())
 			break;
 
-		raw_spin_lock_irq(&this_rq->lock);
-		update_rq_clock(this_rq);
-		update_idle_cpu_load(this_rq);
-		raw_spin_unlock_irq(&this_rq->lock);
-
-		rebalance_domains(balance_cpu, CPU_IDLE);
+		/*
+		 * If time for next balance is due,
+		 * do the balance.
+		 */
+		if (time_after_eq(jiffies, rq->next_balance)) {
+			raw_spin_lock_irq(&this_rq->lock);
+			update_rq_clock(this_rq);
+			update_idle_cpu_load(this_rq);
+			raw_spin_unlock_irq(&this_rq->lock);
+			rebalance_domains(balance_cpu, CPU_IDLE);
+		}
 
 		rq = cpu_rq(balance_cpu);
 		if (time_after(this_rq->next_balance, rq->next_balance))
