@@ -825,8 +825,6 @@ void msm_isp_update_error_frame_count(struct vfe_device *vfe_dev)
 {
 	struct msm_vfe_error_info *error_info = &vfe_dev->error_info;
 	error_info->info_dump_frame_count++;
-	if (error_info->info_dump_frame_count == 0)
-		error_info->info_dump_frame_count++;
 }
 
 void msm_isp_process_error_info(struct vfe_device *vfe_dev)

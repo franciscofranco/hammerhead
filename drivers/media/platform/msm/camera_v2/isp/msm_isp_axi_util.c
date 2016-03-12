@@ -24,7 +24,8 @@ int msm_isp_axi_create_stream(
 	struct msm_vfe_axi_shared_data *axi_data,
 	struct msm_vfe_axi_stream_request_cmd *stream_cfg_cmd)
 {
-	int i, rc = -1;
+	int rc = -1;
+	uint32_t i;
 	for (i = 0; i < MAX_NUM_STREAM; i++) {
 		if (axi_data->stream_info[i].state == AVALIABLE)
 			break;
