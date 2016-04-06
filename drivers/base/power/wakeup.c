@@ -18,6 +18,8 @@
 #include <trace/events/power.h>
 #include <linux/moduleparam.h>
 
+static bool enable_si_ws = true;
+module_param(enable_si_ws, bool, 0644);
 static bool enable_wlan_rx_wake_ws = true;
 module_param(enable_wlan_rx_wake_ws, bool, 0644);
 static bool enable_wlan_ctrl_wake_ws = true;
@@ -487,7 +489,9 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	unsigned int cec;
 
-	if (((!enable_wlan_rx_wake_ws && !strcmp(ws->name, "wlan_rx_wake")) ||
+	if (((!enable_si_ws && !strcmp(ws->name, "sensor_ind")) ||
+		(!enable_wlan_rx_wake_ws &&
+			!strcmp(ws->name, "wlan_rx_wake")) ||
 		(!enable_wlan_ctrl_wake_ws &&
 			!strcmp(ws->name, "wlan_ctrl_wake")) ||
 		(!enable_wlan_wake_ws &&
