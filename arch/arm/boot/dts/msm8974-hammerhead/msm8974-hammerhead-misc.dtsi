@@ -23,27 +23,12 @@
 		vibe-driving-ms = <20>;
 	};
 
-	earjack-debugger {
-		compatible = "serial,earjack-debugger";
-		status = "ok";
-		interrupt-parent = <&pm8941_gpios>;
-		interrupts = <1 0>;
-		serial,irq-gpio = <&pm8941_gpios 1 0x0>;
-	};
-
 	pm8941,boost_gpio {
 		compatible = "pm8941,boost_gpio";
 		label = "PM8941 GPIO 21 for Boost IC";
 		status = "ok";
 		pm8941,bb_boost_gpio_name = "bb_boost_gpio";
 		pm8941,bb_gpio = <&pm8941_gpios 21 0>;
-	};
-
-  hall-bu52031nvx {
-    compatible = "rohm,hall-bu52031nvx";
-		interrupt-parent = <&msmgpio>;
-		interrupts = <73 0x0>;
-		irq-gpio = <&msmgpio 73 0x00>;
 	};
 
 	i2c@f9967000 {
