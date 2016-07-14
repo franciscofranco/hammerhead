@@ -95,7 +95,7 @@ static unsigned long min_sample_time = DEFAULT_MIN_SAMPLE_TIME;
 #define DEFAULT_TIMER_RATE (20 * USEC_PER_MSEC)
 static unsigned long timer_rate = DEFAULT_TIMER_RATE;
 
-#define SCREEN_OFF_TIMER_RATE ((unsigned long)(50 * USEC_PER_MSEC))
+#define SCREEN_OFF_TIMER_RATE ((unsigned long)(60 * USEC_PER_MSEC))
 static unsigned long prev_timer_rate = DEFAULT_TIMER_RATE;
 
 /*
