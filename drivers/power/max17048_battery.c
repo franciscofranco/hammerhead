@@ -681,7 +681,7 @@ static int qpnp_get_battery_current(int *current_ua)
 		return ret;
 	}
 
-	*current_ua = -i_result.result_ua;
+	*current_ua = i_result.result_ua;
 
 	return 0;
 }
