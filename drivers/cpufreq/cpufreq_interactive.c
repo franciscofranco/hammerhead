@@ -1252,14 +1252,11 @@ static int cpufreq_governor_interactive(struct cpufreq_policy *policy,
 			if (anyboost) {
 				u64 now = ktime_to_us(ktime_get());
 
-				cpumask_set_cpu(j, &speedchange_cpumask);
 				pcpu->hispeed_validate_time = now;
 				pcpu->floor_freq = policy->min;
 				pcpu->floor_validate_time = now;
 			}
 		}
-		if (anyboost)
-			wake_up_process(speedchange_task);
 
 		break;
 	}
