@@ -652,7 +652,7 @@ kgsl_gpummu_unmap(struct kgsl_pagetable *pt,
 		/* check if PTE exists */
 		if (!kgsl_pt_map_get(gpummu_pt, pte))
 			KGSL_CORE_ERR("pt entry %x is already "
-			"unmapped for pagetable %p\n", pte, gpummu_pt);
+			"unmapped for pagetable %pK\n", pte, gpummu_pt);
 #endif
 		kgsl_pt_map_set(gpummu_pt, pte, GSL_PT_PAGE_DIRTY);
 		superpte = pte - (pte & (GSL_PT_SUPER_PTE - 1));

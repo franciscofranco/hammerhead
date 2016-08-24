@@ -1076,7 +1076,7 @@ void kgsl_snapshot_save_frozen_objs(struct work_struct *work)
 		goto done;
 
 	KGSL_DRV_ERR(device,
-	"Allocated memory for snapshot objects at address %p, size %x\n",
+	"Allocated memory for snapshot objects at address %pK, size %x\n",
 	device->snapshot_cur_ib_objs, remain);
 	snapshot_dest = device->snapshot_cur_ib_objs;
 	device->snapshot_cur_ib_objs_size = remain;
