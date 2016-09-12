@@ -54,7 +54,7 @@ static int get_device_address(struct smem_client *smem_client,
 	struct ion_client *clnt = NULL;
 
 	if (!iova || !buffer_size || !hndl || !smem_client) {
-		dprintk(VIDC_ERR, "Invalid params: %p, %p, %p, %p\n",
+		dprintk(VIDC_ERR, "Invalid params: %pK, %pK, %pK, %pK\n",
 				smem_client, hndl, iova, buffer_size);
 		return -EINVAL;
 	}
@@ -109,7 +109,7 @@ static void put_device_address(struct smem_client *smem_client,
 	struct ion_client *clnt = NULL;
 
 	if (!hndl || !smem_client) {
-		dprintk(VIDC_WARN, "Invalid params: %p, %p\n",
+		dprintk(VIDC_WARN, "Invalid params: %pK, %pK\n",
 				smem_client, hndl);
 		return;
 	}
@@ -143,7 +143,7 @@ static int ion_user_to_kernel(struct smem_client *client, int fd, u32 offset,
 
 	hndl = ion_import_dma_buf(client->clnt, fd);
 	if (IS_ERR_OR_NULL(hndl)) {
-		dprintk(VIDC_ERR, "Failed to get handle: %p, %d, %d, %p\n",
+		dprintk(VIDC_ERR, "Failed to get handle: %pK, %d, %d, %pK\n",
 				client, fd, offset, hndl);
 		rc = -ENOMEM;
 		goto fail_import_fd;
@@ -213,7 +213,7 @@ static int alloc_ion_mem(struct smem_client *client, size_t size, u32 align,
 	hndl = ion_alloc(client->clnt, size, align, heap_mask, flags);
 	if (IS_ERR_OR_NULL(hndl)) {
 		dprintk(VIDC_ERR,
-		"Failed to allocate shared memory = %p, %d, %d, 0x%x\n",
+		"Failed to allocate shared memory = %pK, %d, %d, 0x%x\n",
 		client, size, align, flags);
 		rc = -ENOMEM;
 		goto fail_shared_mem_alloc;
@@ -242,7 +242,7 @@ static int alloc_ion_mem(struct smem_client *client, size_t size, u32 align,
 	}
 	mem->device_addr = iova;
 	dprintk(VIDC_DBG,
-		"device_address = 0x%lx, kvaddr = 0x%p, size = %d\n",
+		"device_address = 0x%lx, kvaddr = 0x%pK, size = %d\n",
 		mem->device_addr, mem->kvaddr, size);
 	mem->size = size;
 	return rc;
@@ -327,7 +327,7 @@ static int ion_cache_operations(struct smem_client *client,
 	int rc = 0;
 	int msm_cache_ops = 0;
 	if (!mem || !client) {
-		dprintk(VIDC_ERR, "Invalid params: %p, %p\n",
+		dprintk(VIDC_ERR, "Invalid params: %pK, %pK\n",
 			mem, client);
 		return -EINVAL;
 	}
@@ -374,7 +374,7 @@ int msm_smem_cache_operations(void *clt, struct msm_smem *mem,
 	struct smem_client *client = clt;
 	int rc = 0;
 	if (!client) {
-		dprintk(VIDC_ERR, "Invalid params: %p\n",
+		dprintk(VIDC_ERR, "Invalid params: %pK\n",
 			client);
 		return -EINVAL;
 	}
