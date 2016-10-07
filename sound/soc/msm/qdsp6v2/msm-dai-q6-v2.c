@@ -1093,7 +1093,7 @@ static int __devinit msm_auxpcm_dev_probe(struct platform_device *pdev)
 		goto fail_pdata_nomem;
 	}
 
-	dev_dbg(&pdev->dev, "%s: dev %p, dai_data %p, auxpcm_pdata %p\n",
+	dev_dbg(&pdev->dev, "%s: dev %pK, dai_data %pK, auxpcm_pdata %pK\n",
 		__func__, &pdev->dev, dai_data, auxpcm_pdata);
 
 	rc = of_property_read_u32_array(pdev->dev.of_node,
@@ -1429,7 +1429,7 @@ static int msm_dai_q6_mi2s_startup(struct snd_pcm_substream *substream,
 	struct msm_dai_q6_mi2s_dai_data *mi2s_dai_data =
 		dev_get_drvdata(dai->dev);
 
-	dev_dbg(dai->dev, "%s: cnst list %p\n", __func__,
+	dev_dbg(dai->dev, "%s: cnst list %pK\n", __func__,
 		mi2s_dai_data->rate_constraint.list);
 
 	if (mi2s_dai_data->rate_constraint.list) {

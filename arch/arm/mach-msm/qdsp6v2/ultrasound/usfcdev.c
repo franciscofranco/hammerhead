@@ -221,7 +221,7 @@ bool usfcdev_register(
 	bool rc = false;
 
 	if ((event_type_ind >= MAX_EVENT_TYPE_NUM) || !match_cb) {
-		pr_err("%s: wrong input: event_type_ind=%d; match_cb=0x%p\n",
+		pr_err("%s: wrong input: event_type_ind=%d; match_cb=0x%pK\n",
 			__func__,
 			event_type_ind,
 			match_cb);

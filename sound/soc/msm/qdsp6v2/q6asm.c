@@ -701,7 +701,7 @@ int q6asm_audio_client_buf_free_contiguous(unsigned int dir,
 	}
 
 	if (port->buf[0].data) {
-		pr_debug("%s:data[%p]phys[%p][%p] , client[%p] handle[%p]\n",
+		pr_debug("%s:data[%pK]phys[%pK][%pK] , client[%pK] handle[%pK]\n",
 			__func__,
 			(void *)port->buf[0].data,
 			(void *)port->buf[0].phys,
@@ -955,7 +955,7 @@ int q6asm_audio_client_buf_alloc(unsigned int dir,
 					buf[cnt].used = 1;
 					buf[cnt].size = bufsz;
 					buf[cnt].actual_size = bufsz;
-					pr_debug("%s data[%p]phys[%p][%p]\n",
+					pr_debug("%s data[%pK]phys[%pK][%pK]\n",
 						__func__,
 					   (void *)buf[cnt].data,
 					   (void *)buf[cnt].phys,
@@ -1055,7 +1055,7 @@ int q6asm_audio_client_buf_alloc_contiguous(unsigned int dir,
 			buf[cnt].used = dir ^ 1;
 			buf[cnt].size = bufsz;
 			buf[cnt].actual_size = bufsz;
-			pr_debug("%s data[%p]phys[%p][%p]\n", __func__,
+			pr_debug("%s data[%pK]phys[%pK][%pK]\n", __func__,
 				   (void *)buf[cnt].data,
 				   (void *)buf[cnt].phys,
 				   (void *)&buf[cnt].phys);
@@ -1093,7 +1093,7 @@ static int32_t q6asm_srvc_callback(struct apr_client_data *data, void *priv)
 	payload = data->payload;
 
 	if (data->opcode == RESET_EVENTS) {
-		pr_debug("%s: Reset event is received: %d %d apr[%p]\n",
+		pr_debug("%s: Reset event is received: %d %d apr[%pK]\n",
 				__func__,
 				data->reset_event,
 				data->reset_proc,
@@ -1233,7 +1233,7 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 	}
 
 	if (data->opcode == RESET_EVENTS) {
-		pr_debug("q6asm_callback: Reset event is received: %d %d apr[%p]\n",
+		pr_debug("q6asm_callback: Reset event is received: %d %d apr[%pK]\n",
 				data->reset_event, data->reset_proc, ac->apr);
 			if (ac->cb)
 				ac->cb(data->opcode, data->token,
@@ -1332,7 +1332,7 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 			spin_lock_irqsave(&port->dsp_lock, dsp_flags);
 			if (port->buf[data->token].phys !=
 				payload[0]) {
-				pr_err("Buf expected[%p]rxed[%p]\n",\
+				pr_err("Buf expected[%pK]rxed[%pK]\n",\
 				   (void *)port->buf[data->token].phys,\
 				   (void *)payload[0]);
 				spin_unlock_irqrestore(&port->dsp_lock,
@@ -1389,7 +1389,7 @@ static int32_t q6asm_callback(struct apr_client_data *data, void *priv)
 			port->buf[token].used = 0;
 			if (port->buf[token].phys !=
 				payload[READDONE_IDX_BUFADD_LSW]) {
-				pr_err("Buf expected[%p]rxed[%p]\n",\
+				pr_err("Buf expected[%pK]rxed[%pK]\n",\
 				   (void *)port->buf[token].phys,\
 				   (void *)payload[READDONE_IDX_BUFADD_LSW]);
 				spin_unlock_irqrestore(&port->dsp_lock,
@@ -1470,7 +1470,7 @@ void *q6asm_is_cpu_buf_avail(int dir, struct audio_client *ac, uint32_t *size,
 		*size = port->buf[idx].actual_size;
 		*index = port->cpu_buf;
 		data = port->buf[idx].data;
-		pr_debug("%s:session[%d]index[%d] data[%p]size[%d]\n",
+		pr_debug("%s:session[%d]index[%d] data[%pK]size[%d]\n",
 						__func__,
 						ac->session,
 						port->cpu_buf,
@@ -1519,7 +1519,7 @@ void *q6asm_is_cpu_buf_avail_nolock(int dir, struct audio_client *ac,
 	*size = port->buf[idx].actual_size;
 	*index = port->cpu_buf;
 	data = port->buf[idx].data;
-	pr_debug("%s:session[%d]index[%d] data[%p]size[%d]\n",
+	pr_debug("%s:session[%d]index[%d] data[%pK]size[%d]\n",
 		__func__, ac->session, port->cpu_buf,
 		data, *size);
 	/*
@@ -3124,7 +3124,7 @@ static int q6asm_memory_map_regions(struct audio_client *ac, int dir,
 							mmap_region_cmd;
 	q6asm_add_mmaphdr(ac, &mmap_regions->hdr, cmd_size, TRUE,
 					((ac->session << 8) | dir));
-	pr_debug("mmap_region=0x%p token=0x%x\n",
+	pr_debug("mmap_region=0x%pK token=0x%x\n",
 		mmap_regions, ((ac->session << 8) | dir));
 
 	mmap_regions->hdr.opcode = ASM_CMD_SHARED_MEM_MAP_REGIONS;
@@ -3571,7 +3571,7 @@ int q6asm_read(struct audio_client *ac)
 		dsp_buf = port->dsp_buf;
 		ab = &port->buf[dsp_buf];
 
-		pr_debug("%s:session[%d]dsp-buf[%d][%p]cpu_buf[%d][%p]\n",
+		pr_debug("%s:session[%d]dsp-buf[%d][%pK]cpu_buf[%d][%pK]\n",
 					__func__,
 					ac->session,
 					dsp_buf,
@@ -3633,7 +3633,7 @@ int q6asm_read_nolock(struct audio_client *ac)
 		dsp_buf = port->dsp_buf;
 		ab = &port->buf[dsp_buf];
 
-		pr_debug("%s:session[%d]dsp-buf[%d][%p]cpu_buf[%d][%p]\n",
+		pr_debug("%s:session[%d]dsp-buf[%d][%pK]cpu_buf[%d][%pK]\n",
 					__func__,
 					ac->session,
 					dsp_buf,
