@@ -109,13 +109,6 @@ static spinlock_t above_hispeed_delay_lock;
 static unsigned int *above_hispeed_delay = default_above_hispeed_delay;
 static int nabove_hispeed_delay = ARRAY_SIZE(default_above_hispeed_delay);
 
-/* Non-zero means indefinite speed boost active */
-static int boost_val;
-/* Duration of a boot pulse in usecs */
-static int boostpulse_duration_val = DEFAULT_MIN_SAMPLE_TIME;
-/* End time of boost pulse in ktime converted to usecs */
-static u64 boostpulse_endtime;
-
 /*
  * Max additional time to wait in idle, beyond timer_rate, at speeds above
  * minimum before wakeup to reduce speed, or -1 if unnecessary.
@@ -160,7 +153,6 @@ static void cpufreq_interactive_timer_resched(unsigned long cpu,
 	struct cpufreq_interactive_cpuinfo *pcpu = &per_cpu(cpuinfo, cpu);
 	u64 expires;
 	unsigned long flags;
-	u64 now = ktime_to_us(ktime_get());
 
 	spin_lock_irqsave(&pcpu->load_lock, flags);
 	expires = round_to_nw_start(pcpu->last_evaluated_jiffy);
@@ -176,9 +168,7 @@ static void cpufreq_interactive_timer_resched(unsigned long cpu,
 	}
 
 	if (timer_slack_val >= 0 &&
-	    (pcpu->target_freq > pcpu->policy->min ||
-		(pcpu->target_freq == pcpu->policy->min &&
-		 now < boostpulse_endtime))) {
+	    pcpu->target_freq > pcpu->policy->min) {
 		expires += usecs_to_jiffies(timer_slack_val);
 		del_timer(&pcpu->cpu_slack_timer);
 		pcpu->cpu_slack_timer.expires = expires;
@@ -197,15 +187,12 @@ static void cpufreq_interactive_timer_start(int cpu)
 	struct cpufreq_interactive_cpuinfo *pcpu = &per_cpu(cpuinfo, cpu);
 	u64 expires = round_to_nw_start(pcpu->last_evaluated_jiffy);
 	unsigned long flags;
-	u64 now = ktime_to_us(ktime_get());
 
 	spin_lock_irqsave(&pcpu->load_lock, flags);
 	pcpu->cpu_timer.expires = expires;
 	add_timer_on(&pcpu->cpu_timer, cpu);
 	if (timer_slack_val >= 0 &&
-	    (pcpu->target_freq > pcpu->policy->min ||
-		(pcpu->target_freq == pcpu->policy->min &&
-		 now < boostpulse_endtime))) {
+	    pcpu->target_freq > pcpu->policy->min) {
 		expires += usecs_to_jiffies(timer_slack_val);
 		pcpu->cpu_slack_timer.expires = expires;
 		add_timer_on(&pcpu->cpu_slack_timer, cpu);
@@ -383,7 +370,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 	unsigned long flags;
 	unsigned int this_hispeed_freq;
 	bool display_on = is_display_on();
-	bool boosted;
 
 	if (!down_read_trylock(&pcpu->enable_sem))
 		return;
@@ -411,10 +397,9 @@ static void cpufreq_interactive_timer(unsigned long data)
 	do_div(cputime_speedadj, delta_time);
 	loadadjfreq = (unsigned int)cputime_speedadj * 100;
 	cpu_load = loadadjfreq / pcpu->policy->cur;
-	boosted = boost_val || now < boostpulse_endtime;
 	this_hispeed_freq = max(hispeed_freq, pcpu->policy->min);
 
-	if (cpu_load >= go_hispeed_load || boosted) {
+	if (cpu_load >= go_hispeed_load) {
 		if (pcpu->policy->cur < this_hispeed_freq) {
 			new_freq = this_hispeed_freq;
 		} else {
@@ -482,7 +467,7 @@ static void cpufreq_interactive_timer(unsigned long data)
 	 * expires (or the indefinite boost is turned off).
 	 */
 
-	if (!boosted || new_freq > this_hispeed_freq) {
+	if (new_freq > this_hispeed_freq) {
 		pcpu->floor_freq = new_freq;
 		pcpu->floor_validate_time = now;
 	}
@@ -612,42 +597,6 @@ static int cpufreq_interactive_speedchange_task(void *data)
 	}
 
 	return 0;
-}
-
-static void cpufreq_interactive_boost(void)
-{
-	int i;
-	int anyboost = 0;
-	unsigned long flags[2];
-	struct cpufreq_interactive_cpuinfo *pcpu;
-
-	spin_lock_irqsave(&speedchange_cpumask_lock, flags[0]);
-
-	for_each_online_cpu(i) {
-		pcpu = &per_cpu(cpuinfo, i);
-		spin_lock_irqsave(&pcpu->target_freq_lock, flags[1]);
-		if (pcpu->target_freq < hispeed_freq) {
-			pcpu->target_freq = hispeed_freq;
-			cpumask_set_cpu(i, &speedchange_cpumask);
-			pcpu->hispeed_validate_time =
-				ktime_to_us(ktime_get());
-			anyboost = 1;
-		}
-
-		/*
-		 * Set floor freq and (re)start timer for when last
-		 * validated.
-		 */
-
-		pcpu->floor_freq = hispeed_freq;
-		pcpu->floor_validate_time = ktime_to_us(ktime_get());
-		spin_unlock_irqrestore(&pcpu->target_freq_lock, flags[1]);
-	}
-
-	spin_unlock_irqrestore(&speedchange_cpumask_lock, flags[0]);
-
-	if (anyboost)
-		wake_up_process(speedchange_task);
 }
 
 static int cpufreq_interactive_notifier(
@@ -999,79 +948,6 @@ static ssize_t store_timer_slack(
 
 define_one_global_rw(timer_slack);
 
-static ssize_t show_boost(struct kobject *kobj, struct attribute *attr,
-			  char *buf)
-{
-	return sprintf(buf, "%d\n", boost_val);
-}
-
-static ssize_t store_boost(struct kobject *kobj, struct attribute *attr,
-			   const char *buf, size_t count)
-{
-	int ret;
-	unsigned long val;
-
-	ret = kstrtoul(buf, 0, &val);
-	if (ret < 0)
-		return ret;
-
-	boost_val = val;
-
-	if (boost_val) {
-		trace_cpufreq_interactive_boost("on");
-		cpufreq_interactive_boost();
-	} else {
-		boostpulse_endtime = ktime_to_us(ktime_get());
-		trace_cpufreq_interactive_unboost("off");
-	}
-
-	return count;
-}
-
-define_one_global_rw(boost);
-
-static ssize_t store_boostpulse(struct kobject *kobj, struct attribute *attr,
-				const char *buf, size_t count)
-{
-	int ret;
-	unsigned long val;
-
-	ret = kstrtoul(buf, 0, &val);
-	if (ret < 0)
-		return ret;
-
-	boostpulse_endtime = ktime_to_us(ktime_get()) + boostpulse_duration_val;
-	trace_cpufreq_interactive_boost("pulse");
-	cpufreq_interactive_boost();
-	return count;
-}
-
-static struct global_attr boostpulse =
-	__ATTR(boostpulse, 0200, NULL, store_boostpulse);
-
-static ssize_t show_boostpulse_duration(
-	struct kobject *kobj, struct attribute *attr, char *buf)
-{
-	return sprintf(buf, "%d\n", boostpulse_duration_val);
-}
-
-static ssize_t store_boostpulse_duration(
-	struct kobject *kobj, struct attribute *attr, const char *buf,
-	size_t count)
-{
-	int ret;
-	unsigned long val;
-
-	ret = kstrtoul(buf, 0, &val);
-	if (ret < 0)
-		return ret;
-
-	boostpulse_duration_val = val;
-	return count;
-}
-
-define_one_global_rw(boostpulse_duration);
-
 static ssize_t show_io_is_busy(struct kobject *kobj,
 			struct attribute *attr, char *buf)
 {
@@ -1102,9 +978,6 @@ static struct attribute *interactive_attributes[] = {
 	&min_sample_time_attr.attr,
 	&timer_rate_attr.attr,
 	&timer_slack.attr,
-	&boost.attr,
-	&boostpulse.attr,
-	&boostpulse_duration.attr,
 	&io_is_busy_attr.attr,
 	&max_freq_hysteresis_attr.attr,
 	&align_windows_attr.attr,
