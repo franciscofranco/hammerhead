@@ -23,9 +23,10 @@
 #include <linux/msm_thermal.h>
 #include <linux/platform_device.h>
 #include <linux/of.h>
+#include <linux/ratelimit.h>
 #include <mach/cpufreq.h>
 
-unsigned int temp_threshold = 60;
+unsigned int temp_threshold = 70;
 module_param(temp_threshold, int, 0644);
 
 static struct thermal_info {
@@ -42,35 +43,15 @@ static struct thermal_info {
 
 /* throttle points in MHz */
 enum thermal_freqs {
+	FREQ_NOTE_7		 = 652800,
 	FREQ_HELL		 = 883200,
 	FREQ_VERY_HOT		 = 1036800,
 	FREQ_HOT		 = 1267200,
-	FREQ_WARM		 = 1728000,
-};
-
-/* values in Celsius */
-enum threshold_levels {
-	LEVEL_HELL		 = 12,
-	LEVEL_VERY_HOT		 = 9,
-	LEVEL_HOT		 = 5,
-};
-
-/* how long it'll stay throttled in its specific level in ms*/
-enum thermal_min_sample_time {
-	MIN_SAMPLE_TIME_HELL	 = 5000,
-	MIN_SAMPLE_TIME_VERY_HOT = 3000,
-	MIN_SAMPLE_TIME_HOT	 = 2000,
-	MIN_SAMPLE_TIME		 = 250,
+	FREQ_WARM		 = 1497600,
 };
 
 static struct msm_thermal_data msm_thermal_info;
-
 static struct delayed_work check_temp_work;
-
-unsigned short get_threshold(void)
-{
-	return temp_threshold;
-}
 
 static int msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 		unsigned long event, void *data)
@@ -79,7 +60,7 @@ static int msm_thermal_cpufreq_callback(struct notifier_block *nfb,
 
 	if (event == CPUFREQ_INCOMPATIBLE && info.pending_change) {
 		cpufreq_verify_within_limits(policy, 0, info.limited_max_freq);
-		pr_info("%s: Setting cpu%d max frequency to %u\n",
+		pr_info_ratelimited("%s: Setting cpu%d max frequency to %u\n",
                                 KBUILD_MODNAME, policy->cpu, info.limited_max_freq);
 	}
 
@@ -113,7 +94,6 @@ static void check_temp(struct work_struct *work)
 	struct tsens_device tsens_dev;
 	uint32_t freq = 0;
 	long temp = 0;
-	unsigned int sample_time = MIN_SAMPLE_TIME;
 
 	tsens_dev.sensor_num = msm_thermal_info.sensor_id;
 	tsens_get_temp(&tsens_dev, &temp);
@@ -126,17 +106,24 @@ static void check_temp(struct work_struct *work)
 		}
 	}
 
-	if (temp >= temp_threshold + LEVEL_HELL) {
-		freq = FREQ_HELL;
-		sample_time = MIN_SAMPLE_TIME_HELL;
-	} else if (temp >= temp_threshold + LEVEL_VERY_HOT) {
-		freq = FREQ_VERY_HOT;
-		sample_time = MIN_SAMPLE_TIME_VERY_HOT;
-	} else if (temp >= temp_threshold + LEVEL_HOT) {
-		freq = FREQ_HOT;
-		sample_time = MIN_SAMPLE_TIME_HOT;
-	} else if (temp > temp_threshold)
-		freq = FREQ_WARM;
+	if (temp >= temp_threshold) {
+		switch (info.limited_max_freq) {
+			case FREQ_WARM:
+				freq = FREQ_HOT;
+				break;
+			case FREQ_HOT:
+				freq = FREQ_VERY_HOT;
+				break;
+			case FREQ_VERY_HOT:
+				freq = FREQ_HELL;
+				break;
+			case FREQ_HELL:
+				freq = FREQ_NOTE_7;
+				break;
+			default:
+				freq = FREQ_WARM;
+		}
+	}
 
 	if (freq) {
 		limit_cpu_freqs(freq);
@@ -146,7 +133,7 @@ static void check_temp(struct work_struct *work)
 	}
 
 reschedule:
-	schedule_delayed_work(&check_temp_work, msecs_to_jiffies(sample_time));
+	schedule_delayed_work(&check_temp_work, msecs_to_jiffies(250));
 }
 
 static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
