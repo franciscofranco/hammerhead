@@ -51,6 +51,7 @@ enum thermal_freqs {
 };
 
 static struct msm_thermal_data msm_thermal_info;
+static struct workqueue_struct *thermal_wq;
 static struct delayed_work check_temp_work;
 
 static int msm_thermal_cpufreq_callback(struct notifier_block *nfb,
@@ -133,7 +134,7 @@ static void check_temp(struct work_struct *work)
 	}
 
 reschedule:
-	schedule_delayed_work(&check_temp_work, msecs_to_jiffies(250));
+	queue_delayed_work(thermal_wq, &check_temp_work, msecs_to_jiffies(100));
 }
 
 static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
@@ -159,8 +160,14 @@ static int __devinit msm_thermal_dev_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	thermal_wq = alloc_workqueue("thermal_wq", WQ_HIGHPRI, 0);
+	if (!thermal_wq) {
+		pr_err("thermals: don't worry, if this fails we're also bananas\n");
+		goto err;
+	}
+
 	INIT_DELAYED_WORK(&check_temp_work, check_temp);
-	schedule_delayed_work(&check_temp_work, 0);
+	queue_delayed_work(thermal_wq, &check_temp_work, 0);
 
 err:
 	return ret;
