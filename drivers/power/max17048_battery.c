@@ -387,7 +387,8 @@ static void max17048_work(struct work_struct *work)
 
 	if (chip->capacity_level == 0) {
 		max17048_check_low_vbatt(chip);
-		schedule_delayed_work(&chip->monitor_work,
+		queue_delayed_work(system_power_efficient_wq,
+				&chip->monitor_work,
 				msecs_to_jiffies(chip->poll_interval_ms));
 	} else {
 		pr_debug("%s: rsoc=0x%04X rvcell=0x%04X soc=%d"\
@@ -404,7 +405,8 @@ static irqreturn_t max17048_interrupt_handler(int irq, void *data)
 	struct max17048_chip *chip = data;
 
 	pr_debug("%s : interupt occured\n", __func__);
-	schedule_delayed_work(&chip->monitor_work, 0);
+	queue_delayed_work(system_power_efficient_wq,
+		&chip->monitor_work, 0);
 
 	return IRQ_HANDLED;
 }
@@ -479,7 +481,8 @@ ssize_t max17048_store_status(struct device *dev,
 
 	if (strncmp(buf, "reset", 5) == 0) {
 		max17048_set_reset(chip);
-		schedule_delayed_work(&chip->monitor_work, 0);
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->monitor_work, 0);
 	} else {
 		return -EINVAL;
 	}
@@ -866,7 +869,8 @@ static int max17048_pm_notifier(struct notifier_block *notifier,
 		break;
 	case PM_POST_SUSPEND:
 		INIT_COMPLETION(monitor_work_done);
-		schedule_delayed_work(&chip->monitor_work,
+		queue_delayed_work(system_power_efficient_wq,
+					&chip->monitor_work,
 					msecs_to_jiffies(200));
 		max17048_set_alsc_alert(chip, true);
 		break;
@@ -1005,7 +1009,8 @@ static int max17048_probe(struct i2c_client *client,
 		goto err_hw_init;
 	}
 
-	schedule_delayed_work(&chip->monitor_work, 0);
+	queue_delayed_work(system_power_efficient_wq,
+		&chip->monitor_work, 0);
 	enable_irq(chip->alert_irq);
 
 	pr_info("%s: done\n", __func__);
