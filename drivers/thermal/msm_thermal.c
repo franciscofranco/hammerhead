@@ -56,14 +56,32 @@ static struct delayed_work check_temp_work;
 
 static void cpu_offline_wrapper(int cpu)
 {
-        if (cpu_online(cpu))
-		cpu_down(cpu);
+	struct device *cpu_device = NULL;
+	int ret;
+
+        if (cpu_online(cpu)) {
+		ret = cpu_down(cpu);
+
+		if (!ret) {
+			cpu_device = get_cpu_device(cpu);
+			kobject_uevent(&cpu_device->kobj, KOBJ_OFFLINE);
+		}
+	}
 }
 
 static void __ref cpu_online_wrapper(int cpu)
 {
-        if (!cpu_online(cpu))
-		cpu_up(cpu);
+	struct device *cpu_device = NULL;
+	int ret;
+
+        if (!cpu_online(cpu)) {
+		ret = cpu_up(cpu);
+
+		if (!ret) {
+			cpu_device = get_cpu_device(cpu);
+			kobject_uevent(&cpu_device->kobj, KOBJ_ONLINE);
+		}
+	}
 }
 
 static int msm_thermal_cpufreq_callback(struct notifier_block *nfb,
