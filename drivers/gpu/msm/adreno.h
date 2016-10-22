@@ -137,7 +137,7 @@ struct adreno_dispatcher {
 	struct kgsl_cmdbatch *cmdqueue[ADRENO_DISPATCH_CMDQUEUE_SIZE];
 	unsigned int head;
 	unsigned int tail;
-	struct work_struct work;
+	struct kthread_work work;
 	struct kobject kobj;
 };
 
