@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -103,7 +103,7 @@ static int ipa_generate_rt_hw_rule(enum ipa_ip_type ip,
  * @hdr_sz: header size
  * @max_rt_idx: maximal index
  *
- * Returns:	0 on success, negative on failure
+ * Returns:	size on success, negative on failure
  *
  * caller needs to hold any needed locks to ensure integrity
  *
@@ -191,8 +191,15 @@ int ipa_generate_rt_hw_tbl(enum ipa_ip_type ip, struct ipa_mem_buffer *mem)
 	u8 *rt_tbl_mem_body;
 	int max_rt_idx;
 	int i;
+	int res;
 
-	mem->size = ipa_get_rt_hw_tbl_size(ip, &hdr_sz, &max_rt_idx);
+	res = ipa_get_rt_hw_tbl_size(ip, &hdr_sz, &max_rt_idx);
+	if (res < 0) {
+		IPAERR("ipa_get_rt_hw_tbl_size failed %d\n", res);
+		goto error;
+	}
+
+	mem->size = res;
 	mem->size = (mem->size + IPA_RT_TABLE_MEMORY_ALLIGNMENT) &
 				~IPA_RT_TABLE_MEMORY_ALLIGNMENT;
 
@@ -254,7 +261,11 @@ int ipa_generate_rt_hw_tbl(enum ipa_ip_type ip, struct ipa_mem_buffer *mem)
 					      ((u32)body &
 					      IPA_RT_ENTRY_MEMORY_ALLIGNMENT));
 		} else {
-			WARN_ON(tbl->sz == 0);
+			if (tbl->sz == 0) {
+				IPAERR("cannot generate 0 size table\n");
+				goto proc_err;
+			}
+
 			/* allocate memory for the RT tbl */
 			rt_tbl_mem.size = tbl->sz;
 			rt_tbl_mem.base =
