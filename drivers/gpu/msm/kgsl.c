@@ -4399,8 +4399,6 @@ static int __init kgsl_core_init(void)
 	if (kgsl_memfree_hist_init())
 		KGSL_CORE_ERR("failed to init memfree_hist");
 
-	kgsl_heap_init();
-
 	return 0;
 
 err:
