@@ -492,7 +492,7 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 	if (((!enable_si_ws &&
 			!strncmp(ws->name, "sensor_ind", 10)) ||
 		(!enable_wlan_rx_wake_ws &&
-			!strncmp(ws->name, "wlan_rx_wake, 12")) ||
+			!strncmp(ws->name, "wlan_rx_wake", 12)) ||
 		(!enable_wlan_ctrl_wake_ws &&
 			!strncmp(ws->name, "wlan_ctrl_wake", 14)) ||
 		(!enable_wlan_wake_ws &&
