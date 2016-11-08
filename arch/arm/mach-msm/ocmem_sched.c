@@ -1561,7 +1561,7 @@ int process_free(int id, struct ocmem_handle *handle)
 		/* free the allocation */
 		rc = do_free(req);
 		if (rc < 0)
-			return -EINVAL;
+			goto free_fail;
 	}
 
 	inc_ocmem_stat(zone_of(req), NR_FREES);
