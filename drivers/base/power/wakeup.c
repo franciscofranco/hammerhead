@@ -489,22 +489,27 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 {
 	unsigned int cec;
 
-	if (((!enable_si_ws && !strcmp(ws->name, "sensor_ind")) ||
+	if (((!enable_si_ws &&
+			!strncmp(ws->name, "sensor_ind", 10)) ||
 		(!enable_wlan_rx_wake_ws &&
-			!strcmp(ws->name, "wlan_rx_wake")) ||
+			!strncmp(ws->name, "wlan_rx_wake, 12")) ||
 		(!enable_wlan_ctrl_wake_ws &&
-			!strcmp(ws->name, "wlan_ctrl_wake")) ||
+			!strncmp(ws->name, "wlan_ctrl_wake", 14)) ||
 		(!enable_wlan_wake_ws &&
-			!strcmp(ws->name, "wlan_wake")) ||
+			!strncmp(ws->name, "wlan_wake", 9)) ||
 		(!enable_bluedroid_timer_ws &&
-			!strcmp(ws->name, "bluedroid_timer"))||
-		(!enable_bluesleep_ws && !strcmp(ws->name, "bluesleep")))) {
+			!strncmp(ws->name, "bluedroid_timer", 15))||
+		(!enable_bluesleep_ws &&
+			!strncmp(ws->name, "bluesleep", 9)))) {
+
 		/*
 		 * let's try and deactivate this wakeup source since the user
 		 * clearly doesn't want it. The user is responsible for any
 		 * adverse effects and has been warned about it
 		 */
-		wakeup_source_deactivate(ws);
+		if (ws->active)
+			wakeup_source_deactivate(ws);
+
 		return;
 	}
 
