@@ -67,7 +67,6 @@ module_param(load_based_syncs, bool, 0644);
 static struct delayed_work input_boost_rem;
 
 static u64 last_input_time;
-#define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
 
 static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
 {
@@ -365,7 +364,7 @@ static void cpuboost_input_event(struct input_handle *handle,
 		return;
 
 	now = ktime_to_us(ktime_get());
-	if (now - last_input_time < MIN_INPUT_INTERVAL)
+	if ((now - last_input_time) < (input_boost_ms * USEC_PER_MSEC))
 		return;
 
 	if (work_pending(&input_boost_work))
