@@ -353,7 +353,8 @@ static int get_page_list(uint32_t kernel, uint32_t sc, remote_arg_t *pra,
 	pgstart->size = obuf->size;
 	for (i = 0; i < inbufs + outbufs; ++i) {
 		void *buf;
-		int len, num;
+		int num;
+		ssize_t len;
 
 		list[i].num = 0;
 		list[i].pgidx = 0;
