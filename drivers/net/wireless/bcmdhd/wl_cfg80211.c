@@ -8976,19 +8976,16 @@ static s32 wl_notify_escan_complete(struct wl_priv *wl,
 	struct net_device *dev;
 
 	WL_DBG(("Enter \n"));
-
-	mutex_lock(&wl->scan_complete);
-
 	if (!ndev) {
 		WL_ERR(("ndev is null\n"));
 		err = BCME_ERROR;
-		goto out;
+		return err;
 	}
 
 	if (wl->escan_info.ndev != ndev) {
 		WL_ERR(("ndev is different %p %p\n", wl->escan_info.ndev, ndev));
 		err = BCME_ERROR;
-		goto out;
+		return err;
 	}
 
 	if (wl->scan_request) {
@@ -9037,9 +9034,6 @@ static s32 wl_notify_escan_complete(struct wl_priv *wl,
 		wl_clr_p2p_status(wl, SCANNING);
 	wl_clr_drv_status(wl, SCANNING, dev);
 	spin_unlock_irqrestore(&wl->cfgdrv_lock, flags);
-
-out:
-	mutex_unlock(&wl->scan_complete);
 	return err;
 }
 
@@ -9580,7 +9574,6 @@ static s32 wl_init_priv(struct wl_priv *wl)
 	wl_init_event_handler(wl);
 	mutex_init(&wl->usr_sync);
 	mutex_init(&wl->event_sync);
-	mutex_init(&wl->scan_complete);
 	err = wl_init_scan(wl);
 	if (err)
 		return err;
@@ -10561,10 +10554,8 @@ s32 wl_cfg80211_up(void *para)
 	dhd = (dhd_pub_t *)(wl->pub);
 	if (!(dhd->op_mode & DHD_FLAG_HOSTAP_MODE)) {
 		err = wl_cfg80211_attach_post(wl_to_prmry_ndev(wl));
-		if (unlikely(err)) {
-			mutex_unlock(&wl->usr_sync);
+		if (unlikely(err))
 			return err;
-		}
 	}
 	err = __wl_cfg80211_up(wl);
 	if (unlikely(err))
