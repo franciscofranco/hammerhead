@@ -394,8 +394,9 @@ static int bq24192_therm_set_input_i_limit(const char *val,
 	if (!power_supply_is_system_supplied())
 		return 0;
 
-	schedule_delayed_work(&the_chip->therm_work,
-			msecs_to_jiffies(2000));
+	queue_delayed_work(system_power_efficient_wq,
+		&the_chip->therm_work,
+		msecs_to_jiffies(2000));
 
 	return 0;
 }
@@ -700,8 +701,9 @@ static void bq24192_irq_worker(struct work_struct *work)
 			wake_lock(&chip->extra_chg_lock);
 			bq24192_enable_chg_term(chip, false);
 			bq24192_trigger_recharge(chip);
-			schedule_delayed_work(&chip->extra_chg_work,
-					msecs_to_jiffies(EXTRA_CHG_TIME_MS));
+			queue_delayed_work(system_power_efficient_wq,
+				&chip->extra_chg_work,
+				msecs_to_jiffies(EXTRA_CHG_TIME_MS));
 		} else {
 			if (chip->batt_health != POWER_SUPPLY_HEALTH_OVERHEAT)
 				bq24192_set_rechg_voltage(chip, VRECHG_300MV);
@@ -803,7 +805,8 @@ static void bq24192_vbat_notification(enum qpnp_tm_state state, void *ctx)
 
 	wake_lock(&chip->chg_wake_lock);
 	chip->vbat_noti_stat = state;
-	schedule_delayed_work(&chip->vbat_work, msecs_to_jiffies(100));
+	queue_delayed_work(system_power_efficient_wq,
+		&chip->vbat_work, msecs_to_jiffies(100));
 }
 
 static int bq24192_step_down_detect_disable(struct bq24192_chip *chip)
@@ -1051,8 +1054,9 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 		bq24192_set_input_i_limit(chip, adap_tbl[0].input_limit);
 		bq24192_set_ibat_max(chip, adap_tbl[0].chg_limit);
 		wake_lock(&chip->icl_wake_lock);
-		schedule_delayed_work(&chip->input_limit_work,
-					msecs_to_jiffies(200));
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->input_limit_work,
+			msecs_to_jiffies(200));
 		pr_debug("ac is online! i_limit = %d v_limit = %d\n",
 				adap_tbl[0].chg_limit, chip->vin_limit_mv);
 	} else if (wlc_online) {
@@ -1072,8 +1076,9 @@ static void bq24192_external_power_changed(struct power_supply *psy)
 	}
 
 	if (bq24192_is_charger_present(chip))
-		schedule_delayed_work(&chip->therm_work,
-				msecs_to_jiffies(2000));
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->therm_work,
+			msecs_to_jiffies(2000));
 
 	chip->usb_psy->get_property(chip->usb_psy,
 			  POWER_SUPPLY_PROP_SCOPE, &ret);
@@ -1210,8 +1215,9 @@ static void bq24192_input_limit_worker(struct work_struct *work)
 				adap_tbl[chip->icl_idx].input_limit);
 		bq24192_set_ibat_max(chip,
 				adap_tbl[chip->icl_idx].chg_limit);
-		schedule_delayed_work(&chip->input_limit_work,
-					msecs_to_jiffies(500));
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->input_limit_work,
+			msecs_to_jiffies(500));
 	} else {
 		if (chip->icl_idx > 0 && vbus_mv <= chip->icl_vbus_mv)
 			chip->icl_idx--;
