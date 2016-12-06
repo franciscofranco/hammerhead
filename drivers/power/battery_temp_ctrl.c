@@ -194,8 +194,9 @@ static void batt_tm_ctrl_notification(enum qpnp_tm_state state, void *ctx)
 
 	wake_lock(&batt_tm->tm_wake_lock);
 	batt_tm->tm_noti_stat = state;
-	schedule_delayed_work(&batt_tm->tm_work,
-				msecs_to_jiffies(2000));
+	queue_delayed_work(system_power_efficient_wq,
+		&batt_tm->tm_work,
+		msecs_to_jiffies(2000));
 }
 
 static int batt_tm_notification_start(struct batt_tm_data *batt_tm)
