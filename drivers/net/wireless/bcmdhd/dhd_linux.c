@@ -1822,7 +1822,7 @@ static int dhd_rx_suspend_again(struct sk_buff *skb)
 #undef ETHER_ICMP6_TYPE
 #undef ETHER_ICMP6_DADDR
 	}
-	return DHD_PACKET_TIMEOUT_MS;
+	return CUSTOM_DHCP_LOCK_xTIME * DHD_PACKET_TIMEOUT_MS;
 }
 #endif
 
