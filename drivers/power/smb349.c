@@ -380,7 +380,8 @@ static irqreturn_t smb349_irq(int irq, void *dev_id)
 {
 	struct smb349_struct *smb349_chg = dev_id;
 
-	schedule_delayed_work(&smb349_chg->irq_work, msecs_to_jiffies(100));
+	queue_delayed_work(system_power_efficient_wq,
+		&smb349_chg->irq_work, msecs_to_jiffies(100));
 
 	return IRQ_HANDLED;
 }
