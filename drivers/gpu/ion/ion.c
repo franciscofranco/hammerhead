@@ -16,7 +16,9 @@
  *
  */
 
+#include <linux/atomic.h>
 #include <linux/device.h>
+#include <linux/err.h>
 #include <linux/file.h>
 #include <linux/freezer.h>
 #include <linux/fs.h>
@@ -364,6 +366,15 @@ struct ion_buffer *ion_handle_buffer(struct ion_handle *handle)
 static void ion_handle_get(struct ion_handle *handle)
 {
 	kref_get(&handle->ref);
+}
+
+/* Must hold the client lock */
+static struct ion_handle* ion_handle_get_check_overflow(struct ion_handle *handle)
+{
+	if (atomic_read(&handle->ref.refcount) + 1 == 0)
+		return ERR_PTR(-EOVERFLOW);
+	ion_handle_get(handle);
+	return handle;
 }
 
 static int ion_handle_put(struct ion_handle *handle)
@@ -1198,7 +1209,7 @@ struct ion_handle *ion_import_dma_buf(struct ion_client *client, int fd)
 	/* if a handle exists for this buffer just take a reference to it */
 	handle = ion_handle_lookup(client, buffer);
 	if (!IS_ERR_OR_NULL(handle)) {
-		ion_handle_get(handle);
+		handle = ion_handle_get_check_overflow(handle);
 		goto end;
 	}
 	handle = ion_handle_create(client, buffer);
