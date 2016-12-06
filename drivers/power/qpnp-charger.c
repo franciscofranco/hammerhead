@@ -823,7 +823,8 @@ qpnp_chg_vbatdet_lo_irq_handler(int irq, void *_chip)
 
 	pr_debug("chg_done chg_sts: 0x%x triggered\n", chg_sts);
 	if (!chip->charging_disabled && (chg_sts & FAST_CHG_ON_IRQ)) {
-		schedule_delayed_work(&chip->eoc_work,
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->eoc_work,
 			msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 		wake_lock(&chip->eoc_wake_lock);
 		qpnp_chg_disable_irq(&chip->chg_vbatdet_lo);
@@ -849,7 +850,8 @@ qpnp_chg_usb_chg_gone_irq_handler(int irq, void *_chip)
 	if (qpnp_chg_is_usb_chg_plugged_in(chip)) {
 		qpnp_chg_charge_en(chip, 0);
 		qpnp_chg_force_run_on_batt(chip, 1);
-		schedule_delayed_work(&chip->arb_stop_work,
+		queue_delayed_work(system_power_efficient_wq,
+			&chip->arb_stop_work,
 			msecs_to_jiffies(ARB_STOP_WORK_MS));
 	}
 
@@ -881,7 +883,8 @@ qpnp_chg_usb_usbin_valid_irq_handler(int irq, void *_chip)
 			qpnp_chg_usb_suspend_enable(chip, 1);
 			chip->chg_done = false;
 		} else {
-			schedule_delayed_work(&chip->eoc_work,
+			queue_delayed_work(system_power_efficient_wq,
+				&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 		}
 
@@ -931,7 +934,8 @@ qpnp_chg_dc_dcin_valid_irq_handler(int irq, void *_chip)
 		if (!dc_present)
 			chip->chg_done = false;
 		else
-			schedule_delayed_work(&chip->eoc_work,
+			queue_delayed_work(system_power_efficient_wq,
+				&chip->eoc_work,
 				msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 		power_supply_changed(&chip->dc_psy);
 		power_supply_changed(&chip->batt_psy);
@@ -2100,7 +2104,8 @@ qpnp_eoc_work(struct work_struct *work)
 			goto stop_eoc;
 	}
 
-	schedule_delayed_work(&chip->eoc_work,
+	queue_delayed_work(system_power_efficient_wq,
+		&chip->eoc_work,
 		msecs_to_jiffies(EOC_CHECK_PERIOD_MS));
 	return;
 
