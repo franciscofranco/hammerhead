@@ -1,0 +1,384 @@
+Budget Fair Queueing I/O Scheduler
+==================================
+
+This patchset introduces BFQ-v7r5 into Linux 3.4.0.
+For further information: http://www.algogroup.unimo.it/people/paolo/disk_sched/.
+
+The overall diffstat is the following:
+
+ block/Kconfig.iosched         |   33 +
+ block/Makefile                |    1 +
+ block/bfq-cgroup.c            |  902 ++++++++++++++++++++++++++
+ block/bfq-ioc.c               |   36 ++
+ block/bfq-iosched.c           | 3903 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ block/bfq-sched.c             | 1179 ++++++++++++++++++++++++++++++++++
+ block/bfq.h                   |  768 ++++++++++++++++++++++
+ include/linux/cgroup_subsys.h |    6 +
+ 8 files changed, 6828 insertions(+)
+
+CHANGELOG
+
+v7r5:
+. IMPROVEMENT: Improve throughput boosting by idling the device
+  only for processes that, in addition to perform sequential I/O,
+  are I/O-bound (apart from weight-raised queues, for which idling
+  is always performed to guarantee them a low latency).
+. IMPROVEMENT: Improve throughput boosting by depriving processes
+  that cooperate often of weight-raising.
+. CODE IMPROVEMENT: Pass of improvement of the readability of both
+  comments and actual code.
+
+v7r4:
+. BUGFIX. Modified the code so as to be robust against late detection of
+  NCQ support for a rotational device.
+. BUGFIX. Removed a bug that hindered the correct throughput distribution
+  on flash-based devices when not every process had to receive the same
+  fraction of the throughput. This fix entailed also a little efficiency
+  improvement, because it implied the removal of a short function executed
+  in a hot path.
+. CODESTYLE IMPROVEMENT: removed quoted strings split across lines.
+
+v7r3:
+. IMPROVEMENT: Improved throughput boosting with NCQ-capable HDDs and
+  random workloads. The mechanism that further boosts throghput with
+  these devices and workloads is activated only in the cases where it
+  does not cause any violation of throughput-distribution and latency
+  guarantees.
+. IMPROVEMENT: Generalized the computation of the parameters of the
+  low-latency heuristic for interactive applications, so as to fit also
+  slower storage devices. The purpose of this improvement is to preserve
+  low-latency guarantees for interactive applications also on slower
+  devices, such as portable hard disks, multimedia and SD cards.
+. BUGFIX: Re-added MODULE_LICENSE macro.
+. CODE IMPROVEMENTS: Small code cleanups; introduced a coherent naming
+  scheme for all identifiers related to weight raising; refactored and
+  optimized a few hot paths.
+
+v7r2:
+. BUGFIX/IMPROVEMENT. One of the requirements for an application to be
+  deemed as soft real-time is that it issues its requests in batches, and
+  stops doing I/O for a well-defined amount of time before issuing a new
+  batch. Imposing this minimum idle time allows BFQ to filter out I/O-bound
+  applications that may otherwise be incorrectly deemed as soft real-time
+  (under the circumstances described in detail in the comments to the
+  function bfq_bfqq_softrt_next_start()). Unfortunately, BFQ could however
+  start counting this idle time from two different events: either from the
+  expiration of the queue, if all requests of the queue had also been already
+  completed when the queue expired, or, if the previous condition did not
+  hold, from the first completion of one of the still outstanding requests.
+  In the second case, an application had more chances to be deemed as soft
+  real-time.
+  Actually, there was no reason for this differentiated treatment. We
+  addressed this issue by defining more precisely the above requirement for
+  an application to be deemed as soft real-time, and changing the code
+  consequently: a well-defined amount of time must elapse between the
+  completion of *all the requests* of the current pending batch and the
+  issuing of the first request of the next batch (this is, in the end, what
+  happens with a true soft real-time application). This change further
+  reduced false positives, and, as such, improved responsiveness and reduced
+  latency for actual soft real-time applications.
+. CODE IMPROVEMENT. We cleaned up the code a little bit and addressed
+  some issues pointed out by the checkpatch.pl script.
+
+v7r1:
+. BUGFIX. Replace the old value used to approximate 'infinity', with
+  the correct one to use in case times are compared through the macro
+  time_is_before_jiffies(). In fact, this macro, designed to take
+  wraparound issues into account, easily returns anomalous results if
+  its argument is equal to the value that we used as an approximation
+  of 'infinity', namely ((unsigned long) (-1)).  The consequence was
+  that the logical expression used to determine whether a queue
+  belongs to a soft real-time application often yielded an incorrect
+  result. In the end, some application happened to be incorrectly
+  deemed as soft real-time and hence weight-raised. This affected both
+  throughput and latency guarantees.
+. BUGFIX. Fixed a scriverner's error made in an attempt to use the
+  above macro in a logical expression.
+. IMPROVEMENT/BUGFIX. On the expiration of a queue, use a more general
+  condition to allow a weight-raising period to start if the queue is
+  soft real-time.  The previous condition could prevent an empty,
+  soft-real time queue from being correctly deemed as soft real-time.
+. IMPROVEMENT/MINOR BUGFIX. Use jiffies-comparison macros also in the
+  following cases:
+  . to establish whether an application initially deemed as interactive
+    is now meeting the requirements for being classified as soft
+    real-time;
+  . to determine if a weight-raising period must be ended.
+. CODE IMPROVEMENT. Change the type of the time quantities used in the
+  weight-raising heuristics to unsigned long, as the type of the time
+  (jiffies) is unsigned long.
+
+v7:
+- IMPROVEMENT: In the presence of weight-raised queues and if the
+  device is NCQ-enabled, device idling is now disabled for non-raised
+  readers, i.e., for their associated sync queues. Hence a sync queue
+  is expired immediately if it becomes empty, and a new queue is
+  served.  As explained in detail in the papers about BFQ, not idling
+  the device for sync queues when the latter become empty causes BFQ to
+  assign higher timestamps to these queues when they get backlogged
+  again, and hence to serve these queues less frequently. This fact,
+  plus to the fact that, because of the immediate expiration itself,
+  these queues get less service while they are granted access to the
+  disk, reduces the relative rate at which the processes associated to
+  these queues ask for requests from the I/O request pool. If the pool
+  is saturated, as it happens in the presence of write hogs, reducing
+  the above relative rate increases the probability that a request is
+  available (soon) in the pool when a weight-raised process needs it.
+  This change does seem to mitigate the typical starvation problems
+  that occur in the presence of write hogs and NCQ, and hence to
+  guarantee a higher application and system responsiveness in these
+  hostile scenarios.
+- IMPROVEMENT/BUGFIX: Introduced a new classification rule to the soft
+  real-time heuristic, which takes into account also the isochronous
+  nature of such applications. The computation of next_start has been
+  fixed as well. Now it is correctly done from the time of the last
+  transition from idle to backlogged; the next_start is therefore
+  computed from the service received by the queue from its last
+  transition from idle to backlogged. Finally, the code which
+  preserved weight-raising for a soft real-time queue even with no
+  idle->backlogged transition has been removed.
+- IMPROVEMENT: Add a few jiffies to the reference time interval used to
+  establish whether an application is greedy or not. This reference
+  interval was, by default, HZ/125 seconds, which could generate false
+  positives in the following two cases (especially if both cases occur):
+  1) If HZ is so low that the duration of a jiffie is comparable to or
+     higher than the above reference time interval. This happens, e.g.,
+     on slow devices with HZ=100.
+  2) If jiffies, instead of increasing at a constant rate, may stop
+     increasing for some time, then suddenly 'jump' by several units to
+     recover the lost increments. This seems to happen, e.g., in virtual
+     machines.
+  The added number of jiffies has been found experimentally. In particular,
+  according to our experiments, adding this number of jiffies seems to make
+  the filter quite precise also in embedded systems and KVM/QEMU virtual
+  machines. Also contributed by
+  Alexander Spyridakis <a.spyridakis@virtualopensystems.com>.
+- IMPROVEMENT/BUGFIX: Keep disk idling also for NCQ-provided
+  rotational devices, which boosts the throughput on NCQ-enabled
+  rotational devices.
+- BUGFIX: The budget-timeout condition in the bfq_rq_enqueued() function
+  was checked only if the request is large enough to provoke an unplug. As
+  a consequence, for a process always issuing small I/O requests the
+  budget timeout was never checked. The queue associated to the process
+  therefore expired only when its budget was exhausted, even if the
+  queue had already incurred a budget timeout from a while.
+  This fix lets a queue be checked for budget timeout at each request
+  enqueue, and, if needed, expires the queue accordingly even if the
+  request is small.
+- BUGFIX: Make sure that weight-raising is resumed for a split queue,
+  if it was merged when already weight-raised.
+- MINOR BUGFIX: Let bfq_end_raising_async() correctly end weight-raising
+  also for the queues belonging to the root group.
+- IMPROVEMENT: Get rid of the some_coop_idle flag, which in its turn
+  was used to decide whether to disable idling for an in-service
+  shared queue whose seek mean decreased. In fact, disabling idling
+  for such a queue turned out to be useless.
+- CODE IMPROVEMENT: The bfq_bfqq_must_idle() function and the
+  bfq_select_queue() function may not change the current in-service
+  queue in various cases. We have cleaned up the involved conditions,
+  by factoring out the common parts and getting rid of the useless
+  ones.
+- MINOR CODE IMPROVEMENT: The idle_for_long_time condition in the
+  bfq_add_rq_rb() function should be evaluated only on an
+  idle->backlogged transition. Now the condition is set to false
+  by default, evaluating it only if the queue was not busy on a
+  request insertion.
+- MINOR CODE IMPROVEMENT: Added a comment describing the rationale
+  behind the condition evaluated in the function
+  bfq_bfqq_must_not_expire().
+
+v6r2:
+- Fairness fix: the case of queue expiration for budget timeout is
+  now correctly handled also for sync queues, thus allowing also
+  the processes corresponding to these queues to be guaranteed their
+  reserved share of the disk throughput.
+- Fixed a bug that prevented group weights from being correctly
+  set via the sysfs interface.
+- Fixed a bug that cleared a previously-set group weight if the
+  same value was re-inserted via the sysfs interface.
+- Fixed an EQM bug that allowed a newly-started process to skip
+  its initial weight-raising period if its queue was merged before
+  its first request was inserted.
+- Fixed a bug that preserved already-started weight-raising periods
+  even if the low_latency tunable was disabled.
+- The raising_max_time tunable now shows, more user-friendly, the
+  maximum raising time in milliseconds.
+
+v6r1:
+- Fix use-after-free of queues in __bfq_bfqq_expire(). It may happen that
+  a call to bfq_del_bfqq_busy() puts the last reference taken on a queue
+  and frees it. Subsequent accesses to that same queue would result in a
+  use-after-free. Make sure that a queue that has just been deleted from
+  busy is no more touched.
+- Use the uninitialized_var() macro when needed. It may happen that a
+  variable is initialized in a function that is called by the function
+  that defined it. Use the uninitialized_var() macro in these cases.
+
+v6:
+- Replacement of the cooperating-queue merging mechanism borrowed from
+  CFQ with Early Queue Merge (EQM), a unified mechanism to get a
+  sequential read pattern, and hence a high throughput, with any set of
+  processes performing interleaved I/O. EQM also preserves low latency.
+  (see http://algogroup.unimore.it/people/paolo/disk_sched/description.php
+  for more details). Contributed by Mauro Andreolini and Arianna Avanzini.
+  The code for detecting whether two queues have to be merged is a
+  slightly modified version of the CFQ code for detecting whether two
+  queues belong to cooperating processes and whether the service of a
+  queue should be preempted to boost the throughput.
+- Fix a bug that caused the peak rate of a disk to be computed as zero
+  in case of multiple I/O errors. Subsequent estimations of the weight
+  raising duration caused a division-by-zero error.
+
+v5r1:
+- BUG FIX: Fixed stall occurring when the active queue is moved to
+  a different group while idling (this caused the idling timer to be
+  cancelled and hence no new queue to be selected, and no new
+  request to be dispatched).
+- BUG FIX: Fixed wrong assignment of too high budgets to queues during
+  the first few seconds after initialization.
+- BUG FIX: Added proper locking to the function handling the "weights"
+  tunable.
+
+v5:
+- Added an heuristic that, if the tunable raising_max_time is set to
+  0, automatically computes the duration of the weight raising
+  according to the estimated peak rate of the device. This enables
+  flash-based devices to reach maximum throughput as soon as possible,
+  without sacrificing latency.
+
+v4:
+- Throughput-boosting for flash-based devices: improved version of commits
+  a68bbdd and f7d7b7a, which boosts the throughput while still preserving
+  latency guarantees for interactive and soft real-time applications.
+- Better identification of NCQ-capable disks: port of commit e459dd0.
+
+v3-r4:
+- Bugfixes
+  * Removed an important memory leak: under some circumstances the process references
+    to a queue were not decremented correctly, which prevented unused shared bfq_queue
+    to be correctly deallocated.
+  * Fixed various errors related to hierarchical scheduling:
+	* Removed an error causing tasks to be attached to the bfqio cgroup
+	  controller even when BFQ was not the active scheduler
+	* Corrected wrong update of the budgets from the leaf to the root upon
+	  forced selection of a service tree or a bfq_queue
+	* Fixed the way how active leaf entities are moved to the root group before
+	  the group entity is deactivated when a cgroup is destroyed
+- Throughput-boosting improvement for cooperating queues: close detection is now based
+  on a fixed threshold instead of the queue's average seek. This is a port of one of
+  the changes in the CFQ commit 3dde36d by Corrado Zoccolo.
+
+v3-r3:
+- Bugfix: removed an important error causing occasional kernel panics when
+  moving a process to a new cgroup. The panic occurred if:
+  1) the queue associated to the process was idle when the process was moved
+     and
+  2) a new disk request was inserted into the queue just after the move.
+- Further latency improvement through a better treatment of low-bandwidth
+  async queues.
+
+v3-r2:
+- Bugfix: added a forgotten condition that prevents weights of low-bw async
+  queues from being raised when low_latency is off.
+- Latency improvement: low-bw async queues are now better identified.
+
+v3-r1:
+- Fixed an important request-dispatch bug causing occasional IO hangs.
+- Added a new mechanism to reduce the latency of low-bw async queues.
+  This reduces the latency of also the sync queues synchronized with
+  the above async queues.
+- Fixed a minor bug in iocontext locking (port of commits 9b50902 and 3181faa
+  from CFQ).
+
+v3:
+
+- Improved low-latency mechanisms, including a more accurate criterion to
+  distinguish between greedy-but-seeky and soft real-time applications.
+  Interactive applications now enjoy noticeably lower latencies.
+
+- Switch to the simpler one-request-dispatch-at-a-time scheme as in CFQ.
+
+- Ported cooperating-queues merging from CFQ (6d048f5, 1afba04,
+  d9e7620, a36e71f, 04dc6e7, 26a2ac0, 3ac6c9f, f2d1f0a, 83096eb,
+  2e46e8b, df5fe3e, b3b6d04, e6c5bc7, c0324a0, f04a642, 8682e1f,
+  b9d8f4c, 2f7a2d8, ae54abe, e9ce335, 39c01b2, d02a2c0, c10b61f).
+  Contributed by Arianna Avanzini. Queues of processes performing IO
+  on interleaved, yet contiguous disk zones are merged to boost the
+  throughput. Some little optimizations to get a more stable throughput
+  have been added to the original CFQ version.
+
+- Added static fallback queue for extreme OOM conditions (porting of
+  CFQ commits d5036d7, 6118b70, b706f64, 32f2e80). Port contributed by
+  Francesco Allertsen.
+
+- Ported CFQ commits b0b78f8, 40bb54d, 30996f4, dddb745, ad5ebd2, cf7c25c;
+  mainly code cleanup and fix of minor bugs. Port contributed by
+  Francesco Allertsen.
+
+v2:
+
+- An issue that may cause little throughput loss on fast disks has been solved.
+  BFQ-v1 and CFQ may suffer from this problem.
+- The disk-idling timeout has been better tuned to further file latency
+  (especially for the idle- or light-loaded-disk scenarios).
+- One of the parameters of the low-latency heuristics has been tuned a little
+  bit more, so as to reduce the probability that a disk-bound process may
+  hamper the reduction of the latency of interactive and soft real-time
+  applications.
+
+  - Same low-latency guarantees with and without NCQ.
+
+  - Latency for interactive applications about halved with respect to BFQ-v1.
+
+  - When the low_latency tunable is set, also soft real-time applications
+    now enjoy reduced latency.
+
+  - A very little minimum bandwidth is now guaranteed to the
+    Idle IO-scheduling class also when the other classes are
+    backlogged, just to prevent them from starving.
+
+v1:
+
+This is a new version of BFQ with respect to the versions you can
+find on Fabio's site: http://feanor.sssup.it/~fabio/linux/bfq.
+Here is what we changed with respect to the previous versions:
+
+1) re-tuned the budget feedback mechanism: it is now slighlty more
+biased toward assigning high budgets, to boost the aggregated
+throughput more, and more quickly as new processes are started
+
+2) introduced more tolerance toward seeky queues (I verified that the
+phenomena described below used to occur systematically):
+
+   2a: if a queue is expired after having received very little
+       service, then it is not punished as a seeky queue, even if it
+       occurred to consume that little service too slowly; the
+       rationale is that, if the new active queue has been served for
+       a too short time interval, then its possible sequential
+       accesses may not yet prevail on the initial latencies for
+       moving the disk head on the first sector requested
+
+   2b: the waiting time (disk idling) of a queue detected as seeky as
+       a function of the position of the requests it issued is reduced
+       to a very low value only after the queue has consumed a minimum
+       fraction of the assigned budget; this prevents processes
+       generating (partly) seeky workloads from being too ill-treated
+
+   2c: if a queue has consumed 'enough' budget upon a budget timeout, then,
+       even if it did not consume all of its budget, that queue is not punished
+       as any seeky queue; the rationale is that, depending on the disk zones,
+       a queue may be served at a lower rate than the estimated peak rate.
+
+   Changes 2a and 2b have been critical in lowering latencies, whereas
+   change 2c, in addition to change 1, helped a lot increase the disk
+   throughput.
+
+3) slightly changed the peak rate estimator: a low-pass filter is now
+used instead of just keeping the highest rate sampled; the rationale
+is that the peak rate of a disk should be quite stable, so the filter
+should converge more or less smoothly to the right value; it seemed to
+correctly catch the peak rate with all disks we used
+
+4) added the low latency mechanism described in detail in
+http://algogroup.unimore.it/people/paolo/disk_sched/description.php.
+
