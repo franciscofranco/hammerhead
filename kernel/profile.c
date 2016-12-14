@@ -352,7 +352,7 @@ out:
 	put_cpu();
 }
 
-static int __cpuinit profile_cpu_callback(struct notifier_block *info,
+static int __refdata profile_cpu_callback(struct notifier_block *info,
 					unsigned long action, void *__cpu)
 {
 	int node, cpu = (unsigned long)__cpu;
