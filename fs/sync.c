@@ -21,10 +21,13 @@
 
 bool fsync_enabled = true;
 module_param(fsync_enabled, bool, 0644);
+bool fsync_enabled_on_input_boost = true;
+module_param(fsync_enabled_on_input_boost, bool, 0644);
 
 void set_fsync(bool enable)
 {
-        fsync_enabled = enable;
+	if (!fsync_enabled_on_input_boost)
+        	fsync_enabled = enable;
 }
 
 #define VALID_FLAGS (SYNC_FILE_RANGE_WAIT_BEFORE|SYNC_FILE_RANGE_WRITE| \
