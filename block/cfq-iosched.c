@@ -4033,13 +4033,13 @@ static int __init cfq_init(void)
 	/*
 	 * could be 0 on HZ < 1000 setups
 	 */
-	if (!cfq_slice_async)
+	if (CONFIG_HZ >= 1000 && !cfq_slice_async)
 		cfq_slice_async = 1;
-	if (!cfq_slice_idle)
+	if (CONFIG_HZ >= 1000 && !cfq_slice_idle)
 		cfq_slice_idle = 1;
 
 #ifdef CONFIG_CFQ_GROUP_IOSCHED
-	if (!cfq_group_idle)
+	if (CONFIG_HZ >= 1000 && !cfq_group_idle)
 		cfq_group_idle = 1;
 #else
 		cfq_group_idle = 0;
