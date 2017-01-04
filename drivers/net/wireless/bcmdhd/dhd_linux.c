@@ -179,12 +179,6 @@ print_tainted()
 }
 #endif	/* LINUX_VERSION_CODE == KERNEL_VERSION(2, 6, 15) */
 
-/* Linux wireless extension support */
-#if defined(WL_WIRELESS_EXT)
-#include <wl_iw.h>
-extern wl_iw_extra_params_t  g_wl_iw_params;
-#endif /* defined(WL_WIRELESS_EXT) */
-
 #if defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
 #endif /* defined(CONFIG_HAS_EARLYSUSPEND) && defined(DHD_USE_EARLYSUSPEND) */
@@ -264,9 +258,6 @@ static uint32 maxdelay = 0, tspktcnt = 0, maxdelaypktno = 0;
 
 /* Local private structure (extension of pub) */
 typedef struct dhd_info {
-#if defined(WL_WIRELESS_EXT)
-	wl_iw_t		iw;		/* wireless extensions state (must be first) */
-#endif /* defined(WL_WIRELESS_EXT) */
 
 	dhd_pub_t pub;
 
@@ -550,10 +541,6 @@ int dhd_monitor_init(void *dhd_pub);
 int dhd_monitor_uninit(void);
 
 
-
-#if defined(WL_WIRELESS_EXT)
-struct iw_statistics *dhd_get_wireless_stats(struct net_device *dev);
-#endif /* defined(WL_WIRELESS_EXT) */
 
 static void dhd_dpc(ulong data);
 /* forward decl */
@@ -2885,16 +2872,6 @@ dhd_ioctl_entry(struct net_device *net, struct ifreq *ifr, int cmd)
 		return -1;
 	}
 
-#if defined(WL_WIRELESS_EXT)
-	/* linux wireless extensions */
-	if ((cmd >= SIOCIWFIRST) && (cmd <= SIOCIWLAST)) {
-		/* may recurse, do NOT lock */
-		ret = wl_iw_ioctl(net, ifr, cmd);
-		DHD_OS_WAKE_UNLOCK(&dhd->pub);
-		return ret;
-	}
-#endif /* defined(WL_WIRELESS_EXT) */
-
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2, 4, 2)
 	if (cmd == SIOCETHTOOL) {
 		ret = dhd_ethtool(dhd, (void*)ifr->ifr_data);
@@ -3468,17 +3445,6 @@ dhd_attach(osl_t *osh, struct dhd_bus *bus, uint bus_hdrlen)
 	dhd_monitor_init(&dhd->pub);
 	dhd_state |= DHD_ATTACH_STATE_CFG80211;
 #endif
-#if defined(WL_WIRELESS_EXT)
-	/* Attach and link in the iw */
-	if (!(dhd_state &  DHD_ATTACH_STATE_CFG80211)) {
-		if (wl_iw_attach(net, (void *)&dhd->pub) != 0) {
-		DHD_ERROR(("wl_iw_attach failed\n"));
-		goto fail;
-	}
-	dhd_state |= DHD_ATTACH_STATE_WL_ATTACH;
-	}
-#endif /* defined(WL_WIRELESS_EXT) */
-
 
 	/* Set up the watchdog timer */
 	init_timer(&dhd->timer);
@@ -4740,15 +4706,6 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 	net->ethtool_ops = &dhd_ethtool_ops;
 #endif /* LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24) */
 
-#if defined(WL_WIRELESS_EXT)
-#if WIRELESS_EXT < 19
-	net->get_wireless_stats = dhd_get_wireless_stats;
-#endif /* WIRELESS_EXT < 19 */
-#if WIRELESS_EXT > 12
-	net->wireless_handlers = (struct iw_handler_def *)&wl_iw_handler_def;
-#endif /* WIRELESS_EXT > 12 */
-#endif /* defined(WL_WIRELESS_EXT) */
-
 	dhd->pub.rxsz = DBUS_RX_BUFFER_SIZE_DHD(net);
 
 	memcpy(net->dev_addr, temp_addr, ETHER_ADDR_LEN);
@@ -4762,10 +4719,6 @@ dhd_net_attach(dhd_pub_t *dhdp, int ifidx)
 		" MAC: "MACDBG"\n",
 		net->name,
 		MAC2STRDBG(net->dev_addr));
-
-#if defined(SOFTAP) && defined(WL_WIRELESS_EXT) && !defined(WL_CFG80211)
-		wl_iw_iscan_set_scan_broadcast_prep(net, 1);
-#endif
 
 #if 1 && (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 	if (ifidx == 0) {
@@ -4858,13 +4811,6 @@ void dhd_detach(dhd_pub_t *dhdp)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))
 	cancel_work_sync(&dhd->work_hang);
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 27))  */
-
-#if defined(WL_WIRELESS_EXT)
-	if (dhd->dhd_state & DHD_ATTACH_STATE_WL_ATTACH) {
-		/* Detatch and unlink in the iw */
-		wl_iw_detach();
-	}
-#endif /* defined(WL_WIRELESS_EXT) */
 
 	if (dhd->thr_sysioc_ctl.thr_pid >= 0) {
 		PROC_STOP(&dhd->thr_sysioc_ctl);
@@ -5471,26 +5417,6 @@ void dhd_os_prefree(void *osh, void *addr, uint size)
 }
 #endif /* defined(CONFIG_WIFI_CONTROL_FUNC) */
 
-#if defined(WL_WIRELESS_EXT)
-struct iw_statistics *
-dhd_get_wireless_stats(struct net_device *dev)
-{
-	int res = 0;
-	dhd_info_t *dhd = *(dhd_info_t **)netdev_priv(dev);
-
-	if (!dhd->pub.up) {
-		return NULL;
-	}
-
-	res = wl_iw_get_wireless_stats(dev, &dhd->iw.wstats);
-
-	if (res == 0)
-		return &dhd->iw.wstats;
-	else
-		return NULL;
-}
-#endif /* defined(WL_WIRELESS_EXT) */
-
 static int
 dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata, size_t pktlen,
 	wl_event_msg_t *event, void **data)
@@ -5502,19 +5428,8 @@ dhd_wl_host_event(dhd_info_t *dhd, int *ifidx, void *pktdata, size_t pktlen,
 	if (bcmerror != BCME_OK)
 		return (bcmerror);
 
-#if defined(WL_WIRELESS_EXT)
-	if (event->bsscfgidx == 0) {
-		/*
-		 * Wireless ext is on primary interface only
-		 */
-		ASSERT(dhd->iflist[*ifidx] != NULL);
-		ASSERT(dhd->iflist[*ifidx]->net != NULL);
-
-		if (dhd->iflist[*ifidx]->net) {
-			wl_iw_event(dhd->iflist[*ifidx]->net, event, *data);
-		}
-	}
-#endif /* defined(WL_WIRELESS_EXT)  */
+	if ((dhd->iflist[*ifidx] == NULL) || (dhd->iflist[*ifidx]->net == NULL))
+		return BCME_ERROR;
 
 #ifdef WL_CFG80211
 	if ((ntoh32(event->event_type) == WLC_E_IF) &&
@@ -6173,9 +6088,6 @@ static void dhd_hang_process(struct work_struct *work)
 		rtnl_lock();
 		dev_close(dev);
 		rtnl_unlock();
-#if defined(WL_WIRELESS_EXT)
-		wl_iw_send_priv_event(dev, "HANG");
-#endif
 #if defined(WL_CFG80211)
 		wl_cfg80211_hang(dev, WLAN_REASON_UNSPECIFIED);
 #endif
