@@ -45,20 +45,6 @@ enum lge_boot_mode_type {
 	LGE_BOOT_MODE_PIFBOOT
 };
 
-#if defined(CONFIG_LCD_KCAL)
-struct kcal_data {
-		int red;
-		int green;
-		int blue;
-};
-
-struct kcal_platform_data {
-	int (*set_values) (int r, int g, int b);
-	int (*get_values) (int *r, int *g, int *b);
-	int (*refresh_display) (void);
-};
-#endif
-
 enum lge_boot_mode_type lge_get_boot_mode(void);
 
 #define UART_MODE_ALWAYS_OFF_BMSK   BIT(0)
@@ -71,9 +57,5 @@ extern void lge_set_uart_mode(unsigned int um);
 
 void __init lge_reserve(void);
 void __init lge_add_persistent_device(void);
-
-#if defined(CONFIG_LCD_KCAL)
-void __init lge_add_lcd_kcal_devices(void);
-#endif
 
 #endif
