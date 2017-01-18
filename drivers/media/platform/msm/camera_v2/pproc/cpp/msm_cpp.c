@@ -1216,7 +1216,7 @@ static int msm_cpp_cfg(struct cpp_device *cpp_dev,
 	int32_t status = 0;
 	int in_fd;
 
-	int32_t stripe_base = 0;
+	uint32_t stripe_base = 0;
 	int i = 0;
 	if (!new_frame) {
 		pr_err("Insufficient memory. return\n");
@@ -1269,6 +1269,12 @@ static int msm_cpp_cfg(struct cpp_device *cpp_dev,
 	}
 	if (cpp_frame_msg[new_frame->msg_len - 1] != MSM_CPP_MSG_ID_TRAILER) {
 		pr_err("%s %d Invalid frame message\n", __func__, __LINE__);
+		return -EINVAL;
+	}
+	if (stripe_base == UINT_MAX || new_frame->num_strips >
+		(UINT_MAX - 1 - stripe_base) / 27) {
+		pr_err("Invalid frame message,num_strips %d is large\n",
+			new_frame->num_strips);
 		return -EINVAL;
 	}
 	in_phyaddr = msm_cpp_fetch_buffer_info(cpp_dev,
