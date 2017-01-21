@@ -2077,6 +2077,9 @@ wl_run_escan(struct wl_priv *wl, struct net_device *ndev,
 						/* allows only supported channel on
 						*  current reguatory
 						*/
+						if (n_nodfs >= num_chans)
+							break;
+
 						if (channel == (dtoh32(list->element[j])))
 							default_chan_list[n_nodfs++] =
 								channel;
@@ -7876,8 +7879,12 @@ wl_notify_pfn_status(struct wl_priv *wl, bcm_struct_cfgdev *cfgdev,
 	struct wiphy *wiphy = wl_to_wiphy(wl);
 #endif /* GSCAN_SUPPORT */
 
-	WL_ERR((">>> PNO Event\n"));
+	if (!data) {
+		WL_ERR(("Data is NULL!\n"));
+		return 0;
+	}
 
+	WL_DBG((">>> PNO Event\n"));
 	ndev = cfgdev_to_wlc_ndev(cfgdev, wl);
 
 #ifdef GSCAN_SUPPORT
