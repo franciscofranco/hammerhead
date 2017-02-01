@@ -2018,7 +2018,7 @@ qpnp_chg_adjust_vddmax(struct qpnp_chg_chip *chip, int vbat_mv)
 	qpnp_chg_set_appropriate_vddmax(chip);
 }
 
-#define CONSECUTIVE_COUNT	3
+#define CONSECUTIVE_COUNT	10
 static void
 qpnp_eoc_work(struct work_struct *work)
 {
