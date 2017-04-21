@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2012, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2012, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,6 +19,7 @@
 #include <linux/debugfs.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
+#include <linux/rtmutex.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/hrtimer.h>
@@ -32,6 +33,7 @@
 static struct dentry *clients;
 static struct dentry *dir;
 static DEFINE_MUTEX(msm_bus_dbg_fablist_lock);
+static DEFINE_RT_MUTEX(msm_bus_dbg_cllist_lock);
 struct msm_bus_dbg_state {
 	uint32_t cl;
 	uint8_t enable;
@@ -277,14 +279,28 @@ static ssize_t client_data_read(struct file *file, char __user *buf,
 	int bsize = 0;
 	uint32_t cl = (uint32_t)file->private_data;
 	struct msm_bus_cldata *cldata = NULL;
+	int found = 0;
+	ssize_t ret;
 
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
-		if (cldata->clid == cl)
+		if (cldata->clid == cl) {
+			found = 1;
 			break;
+		}
 	}
+
+	if (!found) {
+		rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+		return 0;
+	}
+
 	bsize = cldata->size;
-	return simple_read_from_buffer(buf, count, ppos,
-		cldata->buffer, bsize);
+	ret = simple_read_from_buffer(buf, count, ppos,
+			cldata->buffer, bsize);
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+
+	return ret;
 }
 
 static int client_data_open(struct inode *inode, struct file *file)
@@ -324,7 +340,9 @@ static int msm_bus_dbg_record_client(const struct msm_bus_scale_pdata *pdata,
 	cldata->clid = clid;
 	cldata->file = file;
 	cldata->size = 0;
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_add_tail(&cldata->list, &cl_list);
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 	return 0;
 }
 
@@ -332,6 +350,7 @@ static void msm_bus_dbg_free_client(uint32_t clid)
 {
 	struct msm_bus_cldata *cldata = NULL;
 
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
 		if (cldata->clid == clid) {
 			debugfs_remove(cldata->file);
@@ -340,6 +359,7 @@ static void msm_bus_dbg_free_client(uint32_t clid)
 			break;
 		}
 	}
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 }
 
 static int msm_bus_dbg_fill_cl_buffer(const struct msm_bus_scale_pdata *pdata,
@@ -349,13 +369,24 @@ static int msm_bus_dbg_fill_cl_buffer(const struct msm_bus_scale_pdata *pdata,
 	char *buf = NULL;
 	struct msm_bus_cldata *cldata = NULL;
 	struct timespec ts;
+	int found = 0;
 
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
-		if (cldata->clid == clid)
+		if (cldata->clid == clid) {
+			found = 1;
 			break;
+		}
 	}
+
+	if (!found) {
+		rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+		return -ENOENT;
+	}
+
 	if (cldata->file == NULL) {
 		if (pdata->name == NULL) {
+			rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 			MSM_BUS_DBG("Client doesn't have a name\n");
 			return -EINVAL;
 		}
@@ -394,19 +425,9 @@ static int msm_bus_dbg_fill_cl_buffer(const struct msm_bus_scale_pdata *pdata,
 	i += scnprintf(buf + i, MAX_BUFF_SIZE - i, "\n");
 
 	cldata->size = i;
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+
 	return i;
-}
-
-static int msm_bus_dbg_update_request(struct msm_bus_cldata *cldata, int index)
-{
-	int ret = 0;
-
-	if ((index < 0) || (index > cldata->pdata->num_usecases)) {
-		MSM_BUS_DBG("Invalid index!\n");
-		return -EINVAL;
-	}
-	ret = msm_bus_scale_client_update_request(cldata->clid, index);
-	return ret;
 }
 
 static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
@@ -417,21 +438,30 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 	int ret = 0;
 	char *chid;
 	char *buf = kmalloc((sizeof(char) * (cnt + 1)), GFP_KERNEL);
+	int found = 0;
+	uint32_t clid;
+	ssize_t res = cnt;
 
 	if (!buf || IS_ERR(buf)) {
 		MSM_BUS_ERR("Memory allocation for buffer failed\n");
 		return -ENOMEM;
 	}
-	if (cnt == 0)
-		return 0;
-	if (copy_from_user(buf, ubuf, cnt))
-		return -EFAULT;
+	if (cnt == 0) {
+		res = 0;
+		goto out;
+	}
+	if (copy_from_user(buf, ubuf, cnt)) {
+		res = -EFAULT;
+		goto out;
+	}
 	buf[cnt] = '\0';
 	chid = buf;
 	MSM_BUS_DBG("buffer: %s\n size: %d\n", buf, sizeof(ubuf));
 
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
 		if (strstr(chid, cldata->pdata->name)) {
+			found = 1;
 			cldata = cldata;
 			strsep(&chid, " ");
 			if (chid) {
@@ -439,18 +469,34 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 				if (ret) {
 					MSM_BUS_DBG("Index conversion"
 						" failed\n");
-					return -EFAULT;
+					rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+					res = -EFAULT;
+					goto out;
 				}
-			} else
+			} else {
 				MSM_BUS_DBG("Error parsing input. Index not"
 					" found\n");
+				found = 0;
+			}
+			if ((index < 0) ||
+					(index > cldata->pdata->num_usecases)) {
+				MSM_BUS_DBG("Invalid index!\n");
+				rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+				res = -EINVAL;
+				goto out;
+			}
+			clid = cldata->clid;
 			break;
 		}
 	}
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 
-	msm_bus_dbg_update_request(cldata, index);
+	if (found)
+		msm_bus_scale_client_update_request(clid, index);
+
+out:
 	kfree(buf);
-	return cnt;
+	return res;
 }
 
 /**
@@ -464,11 +510,18 @@ static ssize_t fabric_data_read(struct file *file, char __user *buf,
 	int bsize = 0;
 	ssize_t ret;
 	const char *name = file->private_data;
+	int found = 0;
 
 	mutex_lock(&msm_bus_dbg_fablist_lock);
 	list_for_each_entry(fablist, &fabdata_list, list) {
-		if (strcmp(fablist->name, name) == 0)
+		if (strcmp(fablist->name, name) == 0) {
+			found = 1;
 			break;
+		}
+	}
+	if (!found) {
+		mutex_unlock(&msm_bus_dbg_fablist_lock);
+		return -ENOENT;
 	}
 	bsize = fablist->size;
 	ret = simple_read_from_buffer(buf, count, ppos,
@@ -527,12 +580,20 @@ static int msm_bus_dbg_fill_fab_buffer(const char *fabname,
 	char *buf = NULL;
 	struct msm_bus_fab_list *fablist = NULL;
 	struct timespec ts;
+	int found = 0;
 
 	mutex_lock(&msm_bus_dbg_fablist_lock);
 	list_for_each_entry(fablist, &fabdata_list, list) {
-		if (strcmp(fablist->name, fabname) == 0)
+		if (strcmp(fablist->name, fabname) == 0) {
+			found = 1;
 			break;
+		}
 	}
+	if (!found) {
+		mutex_unlock(&msm_bus_dbg_fablist_lock);
+		return -ENOENT;
+	}
+
 	if (fablist->file == NULL) {
 		MSM_BUS_DBG("Fabric dbg entry does not exist\n");
 		mutex_unlock(&msm_bus_dbg_fablist_lock);
@@ -664,6 +725,7 @@ static int __init msm_bus_debugfs_init(void)
 		clients, NULL, &msm_bus_dbg_update_request_fops) == NULL)
 		goto err;
 
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry(cldata, &cl_list, list) {
 		if (cldata->pdata->name == NULL) {
 			MSM_BUS_DBG("Client name not found\n");
@@ -672,6 +734,7 @@ static int __init msm_bus_debugfs_init(void)
 		cldata->file = msm_bus_dbg_create(cldata->
 			pdata->name, S_IRUGO, clients, cldata->clid);
 	}
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 
 	mutex_lock(&msm_bus_dbg_fablist_lock);
 	list_for_each_entry(fablist, &fabdata_list, list) {
@@ -699,10 +762,14 @@ static void __exit msm_bus_dbg_teardown(void)
 	struct msm_bus_cldata *cldata = NULL, *cldata_temp;
 
 	debugfs_remove_recursive(dir);
+
+	rt_mutex_lock(&msm_bus_dbg_cllist_lock);
 	list_for_each_entry_safe(cldata, cldata_temp, &cl_list, list) {
 		list_del(&cldata->list);
 		kfree(cldata);
 	}
+	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
+
 	mutex_lock(&msm_bus_dbg_fablist_lock);
 	list_for_each_entry_safe(fablist, fablist_temp, &fabdata_list, list) {
 		list_del(&fablist->list);
