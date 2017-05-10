@@ -45,6 +45,8 @@ struct csiphy_device {
 	struct clk *csiphy_clk[4];
 	uint8_t ref_count;
 	uint16_t lane_mask[MAX_CSIPHY];
+	struct regulator *csi_vdd;
+	struct regulator *reg_ptr;
 };
 
 #define VIDIOC_MSM_CSIPHY_RELEASE \
