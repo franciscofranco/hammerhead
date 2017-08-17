@@ -558,6 +558,8 @@ enum {
 #define EXT4_GET_BLOCKS_NO_NORMALIZE		0x0040
 	/* Request will not result in inode size update (user for fallocate) */
 #define EXT4_GET_BLOCKS_KEEP_SIZE		0x0080
+/* Write zeros to newly created written extents */
+#define EXT4_GET_BLOCKS_ZERO			0x0200
 
 /*
  * Flags used by ext4_free_blocks
