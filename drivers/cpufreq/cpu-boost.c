@@ -281,7 +281,7 @@ static int boost_mig_sync_thread(void *data)
 			cpufreq_update_policy(src_cpu);
 		if (cpu_online(dest_cpu)) {
 			cpufreq_update_policy(dest_cpu);
-			queue_delayed_work_on(dest_cpu, cpu_boost_wq,
+			queue_delayed_work_on(dest_cpu, system_power_efficient_wq,
 				&s->boost_rem, msecs_to_jiffies(boost_ms));
 		} else {
 			s->boost_min = 0;
