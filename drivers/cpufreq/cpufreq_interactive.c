@@ -417,8 +417,6 @@ static void cpufreq_interactive_timer(unsigned long data)
 
 		jump_to_max = true;
 		new_freq = pcpu->policy->max;
-		pr_err_ratelimited("%s: prev_load: %d -> cpu_load: %d\n",
-			__func__, pcpu->prev_load, cpu_load);
 	} else if (go_hispeed_load && go_hispeed_load < 100 &&
 			cpu_load >= go_hispeed_load) {
 		if (pcpu->policy->cur < this_hispeed_freq) {
