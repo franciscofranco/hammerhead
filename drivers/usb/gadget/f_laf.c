@@ -694,7 +694,7 @@ static int laf_bind_config(struct usb_configuration *c)
 
 	dev->cdev = c->cdev;
 	dev->function.name = "laf";
-	dev->function.descriptors = fs_laf_descs;
+	dev->function.fs_descriptors = fs_laf_descs;
 	dev->function.hs_descriptors = hs_laf_descs;
 	if (gadget_is_superspeed(c->cdev->gadget))
 		dev->function.ss_descriptors = ss_laf_descs;

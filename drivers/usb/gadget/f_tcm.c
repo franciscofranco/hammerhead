@@ -2366,7 +2366,7 @@ static int tcm_bind_config(struct usb_configuration *c)
 	if (!fu)
 		return -ENOMEM;
 	fu->function.name = "Target Function";
-	fu->function.descriptors = uasp_fs_function_desc;
+	fu->function.fs_descriptors = uasp_fs_function_desc;
 	fu->function.hs_descriptors = uasp_hs_function_desc;
 	fu->function.ss_descriptors = uasp_ss_function_desc;
 	fu->function.strings = tcm_strings;
