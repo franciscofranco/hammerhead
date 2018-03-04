@@ -88,6 +88,13 @@ UTS_TRUNCATE="cut -b -$UTS_LEN"
 # changed comment in the
 # first line.
 
-vecho "  UPD     $TARGET"
-mv -f .tmpcompile $TARGET
+if [ -r $TARGET ] && \
+      grep -v 'UTS_VERSION' $TARGET > .tmpver.1 && \
+      grep -v 'UTS_VERSION' .tmpcompile > .tmpver.2 && \
+      cmp -s .tmpver.1 .tmpver.2; then
+   rm -f .tmpcompile
+else
+   vecho "  UPD     $TARGET"
+   mv -f .tmpcompile $TARGET
+fi
 rm -f .tmpver.1 .tmpver.2
