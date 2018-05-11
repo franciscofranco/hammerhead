@@ -351,7 +351,8 @@ struct net *get_net_ns_by_fd(int fd)
 }
 
 #else
-struct net *copy_net_ns(unsigned long flags, struct net *old_net)
+struct net *copy_net_ns(unsigned long flags,
+                        struct user_namespace *user_ns, struct net *old_net)
 {
 	if (flags & CLONE_NEWNET)
 		return ERR_PTR(-EINVAL);
