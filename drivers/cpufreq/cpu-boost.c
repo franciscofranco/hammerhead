@@ -159,6 +159,15 @@ static int boost_adjust_notify(struct notifier_block *nb, unsigned long val,
 		ib_min = min((s->input_boost_min == UINT_MAX ?
 			policy->max : s->input_boost_min), policy->max);
 
+		/*
+		 * If we're not resetting the boost and if the new boosted freq
+		 * is below or equal to the current min freq, bail early
+		 */
+		if (ib_min) {
+			if (ib_min <= policy->min)
+				break;
+		}
+
 		min = max(b_min, ib_min);
 		min = min(min, policy->max);
 
@@ -224,7 +233,7 @@ void do_input_boost_max()
 
  	queue_delayed_work(system_power_efficient_wq,
 		&input_boost_rem, msecs_to_jiffies(
-			!input_boost_ms ? 1500 : input_boost_ms));
+			input_boost_ms < 1500 ? 1500 : input_boost_ms));
 }
 
 static void do_input_boost_rem(struct work_struct *work)
