@@ -1617,9 +1617,9 @@ static int do_execve_common(const char *filename,
 	}
 
 	if (capable(CAP_SYS_ADMIN)) {
-		if (unlikely(!strcmp(filename->name, ZYGOTE32_BIN)))
+		if (unlikely(!strcmp(filename, ZYGOTE32_BIN)))
 			atomic_set(&zygote32_pid, current->pid);
-		else if (unlikely(!strcmp(filename->name, ZYGOTE64_BIN)))
+		else if (unlikely(!strcmp(filename, ZYGOTE64_BIN)))
 			atomic_set(&zygote64_pid, current->pid);
 	}
 
