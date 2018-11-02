@@ -222,6 +222,9 @@ void do_input_boost_max()
 	unsigned int i;
 	struct cpu_sync *i_sync_info;
 
+	if (!cpu_boost_worker_thread)
+		return;
+
  	cancel_delayed_work_sync(&input_boost_rem);
 
  	for_each_possible_cpu(i) {
