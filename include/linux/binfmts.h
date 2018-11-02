@@ -135,6 +135,7 @@ extern void install_exec_creds(struct linux_binprm *bprm);
 extern void do_coredump(long signr, int exit_code, struct pt_regs *regs);
 extern void set_binfmt(struct linux_binfmt *new);
 extern void free_bprm(struct linux_binprm *);
+extern bool is_zygote_pid(pid_t pid);
 
 #endif /* __KERNEL__ */
 #endif /* _LINUX_BINFMTS_H */
