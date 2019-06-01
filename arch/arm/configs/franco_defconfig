@@ -3204,7 +3204,7 @@ CONFIG_MISC_FILESYSTEMS=y
 # CONFIG_ADFS_FS is not set
 # CONFIG_AFFS_FS is not set
 # CONFIG_ECRYPT_FS is not set
-# CONFIG_SDCARD_FS is not set
+CONFIG_SDCARD_FS=y
 # CONFIG_HFS_FS is not set
 # CONFIG_HFSPLUS_FS is not set
 # CONFIG_BEFS_FS is not set
